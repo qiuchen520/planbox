@@ -207,6 +207,18 @@ class _TimetablePageState extends State<TimetablePage> {
     });
   }
 
+  /// 清空已选格子。单独抽成方法，是为了无论如何都给一次反馈，
+  /// 免得「点清空没反应」这种问题再次说不清。
+  void _clearSel() {
+    final n = _sel.length;
+    if (n == 0) {
+      _toast('还没有选中格子');
+      return;
+    }
+    setState(_sel.clear);
+    _toast('已清空 $n 格');
+  }
+
   void _toast(String msg) {
     if (!mounted) return;
     final m = ScaffoldMessenger.maybeOf(context);
@@ -874,42 +886,59 @@ class _TimetablePageState extends State<TimetablePage> {
   }
 
   Widget _buildSelBar() {
+    final n = _sel.length;
     return Container(
-      padding: EdgeInsets.fromLTRB(14, 6, 10, 10),
+      padding: EdgeInsets.fromLTRB(12, 6, 12, 8),
       decoration: BoxDecoration(
         color: kCard2,
         border: Border(top: BorderSide(color: kLine)),
       ),
       child: SafeArea(
         top: false,
-        child: Row(
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Icon(Icons.checklist_rounded, size: 18, color: kAcc),
-            SizedBox(width: 8),
-            Text('已选 ${_sel.length} 格',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600)),
-            SizedBox(width: 10),
-            Text('点格子加/减',
-                style: TextStyle(fontSize: 11, color: kDim)),
-            Spacer(),
-            TextButton(
-              onPressed:
-                  _sel.isEmpty ? null : () => setState(() => _sel.clear()),
-              child: Text('清空', style: TextStyle(fontSize: 12)),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.checklist_rounded, size: 18, color: kAcc),
+                SizedBox(width: 6),
+                Text('已选 $n 格',
+                    style: TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600)),
+                SizedBox(width: 8),
+                Text('点格子加/减',
+                    style: TextStyle(fontSize: 11, color: kDim)),
+              ],
             ),
-            SizedBox(width: 6),
+            OutlinedButton.icon(
+              onPressed: _clearSel,
+              icon: Icon(Icons.layers_clear_outlined, size: 16),
+              label: Text('清空', style: TextStyle(fontSize: 12.5)),
+              style: OutlinedButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                foregroundColor: n == 0 ? kDim : kFg,
+                side: BorderSide(color: n == 0 ? kLine : kDim),
+              ),
+            ),
             TextButton(
               onPressed: _exitSel,
-              child: Text('退出', style: TextStyle(fontSize: 12)),
+              style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: kDim,
+                  textStyle: TextStyle(fontSize: 12.5)),
+              child: Text('退出'),
             ),
-            SizedBox(width: 6),
             FilledButton.icon(
               onPressed: _batchAdd,
               icon: Icon(Icons.playlist_add_check, size: 17),
               label: Text('批量加课',
                   style:
                       TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+              style: FilledButton.styleFrom(
+                  visualDensity: VisualDensity.compact),
             ),
           ],
         ),
