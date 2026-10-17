@@ -53,11 +53,17 @@ jobs:
       - name: Sign APK with fixed keystore
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.KEY_PASS }}
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::缺少 Secret KEYSTORE_B64，拒绝用其他钥匙签名"
-            exit 1
-          fi
+          # 凭据一律来自 Secret，仓库与日志里不出现明文
+          for v in KEYSTORE_B64 KEYSTORE_PASS KEY_ALIAS KEY_PASS; do
+            if [ -z "${!v}" ]; then
+              echo "::error::缺少 Secret $v，拒绝用其他钥匙签名"
+              exit 1
+            fi
+          done
           printf '%s' "$KEYSTORE_B64" | base64 -d > /tmp/planbox.jks
           test -s /tmp/planbox.jks || { echo "::error::签名库解码失败"; exit 1; }
           echo "已从 Secret 载入签名库（$(wc -c < /tmp/planbox.jks) 字节）"
@@ -66,9 +72,9 @@ jobs:
           for f in build/app/outputs/flutter-apk/*.apk; do
             "$BT/apksigner" sign \
               --ks /tmp/planbox.jks \
-              --ks-key-alias planbox \
-              --ks-pass pass:planbox2026 \
-              --key-pass pass:planbox2026 \
+              --ks-key-alias "$KEY_ALIAS" \
+              --ks-pass "env:KEYSTORE_PASS" \
+              --key-pass "env:KEY_PASS" \
               --out "${f%.apk}-signed.apk" "$f"
             mv "${f%.apk}-signed.apk" "$f"
             "$BT/apksigner" verify --print-certs "$f" | head -3 || true
@@ -84,8 +90,8 @@ jobs:
       - name: Publish to GitHub Releases (tag or main)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.4.7-build{0}', github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Dev build {0} · v0.4.7', github.run_number) }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.4.8-build{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Dev build {0} · v0.4.8', github.run_number) }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           files: build/app/outputs/flutter-apk/*.apk
           generate_release_notes: true

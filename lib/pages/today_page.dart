@@ -363,9 +363,10 @@ class _TodayPageState extends State<TodayPage> {
       );
     }
 
+    // 手机：单栏。左右边距收窄一点，把宽度留给正文和标题。
     return ContentWidth(
       child: ListView(
-        padding: EdgeInsets.fromLTRB(20, 10, 20, 28),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [...head, ...timelineBody, ...sideBody, ...foot],
       ),
     );

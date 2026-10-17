@@ -1008,70 +1008,109 @@ class _TimetablePageState extends State<TimetablePage> {
     final isCurrent = _viewWeek == _currentWeek;
     return Padding(
       padding: EdgeInsets.fromLTRB(14, 6, 8, 2),
-      child: Row(
-        children: [
-          Text('课表',
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
-          SizedBox(width: 10),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: '上一周',
-            onPressed: () => _moveWeek(-1),
-            icon: Icon(Icons.chevron_left, size: 20),
-          ),
-          GestureDetector(
-            onTap: _jumpWeek,
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 11, vertical: 4),
-              decoration: BoxDecoration(
-                color: kAcc.withValues(alpha: isCurrent ? 0.18 : 0.10),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                    color: kAcc.withValues(alpha: isCurrent ? 0.5 : 0.2)),
+      child: LayoutBuilder(builder: (ctx, c) {
+        // 手机竖屏塞不下「标题+箭头+周次+本周+批量+帮助」一整排，
+        // 底部导航已经写着「课表」，窄屏干脆省掉标题，按钮改用图标。
+        final narrow = c.maxWidth < 430;
+        return Row(
+          children: [
+            if (!narrow) ...[
+              Text('课表',
+                  style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
+              SizedBox(width: 10),
+            ],
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '上一周',
+              onPressed: () => _moveWeek(-1),
+              icon: Icon(Icons.chevron_left, size: 20),
+            ),
+            GestureDetector(
+              onTap: _jumpWeek,
+              child: Container(
+                padding: EdgeInsets.symmetric(
+                    horizontal: narrow ? 9 : 11, vertical: 4),
+                decoration: BoxDecoration(
+                  color: kAcc.withValues(alpha: isCurrent ? 0.18 : 0.10),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: kAcc.withValues(alpha: isCurrent ? 0.5 : 0.2)),
+                ),
+                child: Text(
+                  narrow
+                      ? '第$_viewWeek周·${_viewWeek.isOdd ? "单" : "双"}'
+                      : '第 $_viewWeek 周 · ${_viewWeek.isOdd ? "单" : "双"}',
+                  maxLines: 1,
+                  style: TextStyle(
+                      fontSize: narrow ? 11.5 : 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: kAcc),
+                ),
               ),
-              child: Text(
-                '第 $_viewWeek 周 · ${_viewWeek.isOdd ? "单" : "双"}',
-                style: TextStyle(
-                    fontSize: 12.5, fontWeight: FontWeight.w600, color: kAcc),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '下一周',
+              onPressed: () => _moveWeek(1),
+              icon: Icon(Icons.chevron_right, size: 20),
+            ),
+            if (!isCurrent)
+              narrow
+                  ? IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: '回到本周',
+                      onPressed: () => setState(() => _viewWeek = _currentWeek),
+                      icon: Icon(Icons.restore, size: 18),
+                    )
+                  : TextButton(
+                      onPressed: () => setState(() => _viewWeek = _currentWeek),
+                      child: Text('本周', style: TextStyle(fontSize: 12)),
+                    ),
+            Spacer(),
+            if (narrow)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: _selectMode ? '退出多选' : '批量',
+                onPressed: () {
+                  if (_selectMode) {
+                    _exitSel();
+                  } else {
+                    setState(() => _selectMode = true);
+                  }
+                },
+                icon: Icon(
+                  _selectMode ? Icons.close : Icons.checklist_rounded,
+                  size: 19,
+                  color: _selectMode ? kDanger : kAcc,
+                ),
+              )
+            else
+              TextButton.icon(
+                onPressed: () {
+                  if (_selectMode) {
+                    _exitSel();
+                  } else {
+                    setState(() => _selectMode = true);
+                  }
+                },
+                icon: Icon(
+                    _selectMode ? Icons.close : Icons.checklist_rounded,
+                    size: 17),
+                label: Text(_selectMode ? '退出多选' : '批量',
+                    style: TextStyle(fontSize: 12)),
+                style: TextButton.styleFrom(
+                  foregroundColor: _selectMode ? kDanger : kAcc,
+                ),
               ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: '使用提示',
+              onPressed: _showHelp,
+              icon: Icon(Icons.help_outline, size: 19),
             ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: '下一周',
-            onPressed: () => _moveWeek(1),
-            icon: Icon(Icons.chevron_right, size: 20),
-          ),
-          if (!isCurrent)
-            TextButton(
-              onPressed: () => setState(() => _viewWeek = _currentWeek),
-              child: Text('本周', style: TextStyle(fontSize: 12)),
-            ),
-          Spacer(),
-          TextButton.icon(
-            onPressed: () {
-              if (_selectMode) {
-                _exitSel();
-              } else {
-                setState(() => _selectMode = true);
-              }
-            },
-            icon: Icon(_selectMode ? Icons.close : Icons.checklist_rounded,
-                size: 17),
-            label: Text(_selectMode ? '退出多选' : '批量',
-                style: TextStyle(fontSize: 12)),
-            style: TextButton.styleFrom(
-              foregroundColor: _selectMode ? kDanger : kAcc,
-            ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            tooltip: '使用提示',
-            onPressed: _showHelp,
-            icon: Icon(Icons.help_outline, size: 19),
-          ),
-        ],
-      ),
+          ],
+        );
+      }),
     );
   }
 
