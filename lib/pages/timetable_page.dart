@@ -207,8 +207,7 @@ class _TimetablePageState extends State<TimetablePage> {
     });
   }
 
-  /// 清空已选格子。单独抽成方法，是为了无论如何都给一次反馈，
-  /// 免得「点清空没反应」这种问题再次说不清。
+  /// 只取消勾选，不碰数据库。文案别说「清空」——用户看到「已清空」会以为课被删了。
   void _clearSel() {
     final n = _sel.length;
     if (n == 0) {
@@ -216,7 +215,7 @@ class _TimetablePageState extends State<TimetablePage> {
       return;
     }
     setState(_sel.clear);
-    _toast('已清空 $n 格');
+    _toast('已取消 $n 格的选择');
   }
 
   /// 清空「选中的这些格子里的课」——注意这跟「取消选择」是两件事。
@@ -927,72 +926,80 @@ class _TimetablePageState extends State<TimetablePage> {
 
   Widget _buildSelBar() {
     final n = _sel.length;
+    final label = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.checklist_rounded, size: 17, color: kAcc),
+        SizedBox(width: 6),
+        Text(n == 0 ? '还没选格子' : '已选 $n 节',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      ],
+    );
+    final acts = <Widget>[
+      TextButton.icon(
+        onPressed: n == 0 ? null : _clearCells,
+        icon: Icon(Icons.layers_clear_outlined, size: 16),
+        label: Text('清空格子', style: TextStyle(fontSize: 12.5)),
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          foregroundColor: n == 0 ? kDim : kDanger,
+          padding: EdgeInsets.symmetric(horizontal: 10),
+        ),
+      ),
+      TextButton(
+        onPressed: n == 0 ? null : _clearSel,
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          foregroundColor: kDim,
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          textStyle: TextStyle(fontSize: 12.5),
+        ),
+        child: Text('取消选择'),
+      ),
+      FilledButton.icon(
+        onPressed: _batchAdd,
+        icon: Icon(Icons.playlist_add_check, size: 16),
+        label: Text('批量加课',
+            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+        style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+      ),
+    ];
     return Container(
-      padding: EdgeInsets.fromLTRB(12, 6, 12, 8),
+      // 顶层 Column 默认居中，不给宽度这条横栏就只会缩在中间一小段。
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(16, 4, 12, 4),
       decoration: BoxDecoration(
         color: kCard2,
         border: Border(top: BorderSide(color: kLine)),
       ),
       child: SafeArea(
         top: false,
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Row(
+        child: LayoutBuilder(builder: (ctx, c) {
+          // 平板一行到底；手机装不下就折成两行，宁可换行也不横向溢出。
+          if (c.maxWidth < 460) {
+            return Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.checklist_rounded, size: 18, color: kAcc),
-                SizedBox(width: 6),
-                Text('已选 $n 格',
-                    style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600)),
-                SizedBox(width: 8),
-                Text('点格子加/减',
-                    style: TextStyle(fontSize: 11, color: kDim)),
+                label,
+                SizedBox(height: 2),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: acts,
+                ),
               ],
-            ),
-            OutlinedButton.icon(
-              onPressed: _clearCells,
-              icon: Icon(Icons.layers_clear_outlined, size: 16),
-              label: Text('清空格子', style: TextStyle(fontSize: 12.5)),
-              style: OutlinedButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                foregroundColor: n == 0 ? kDim : kDanger,
-                side: BorderSide(
-                    color: n == 0
-                        ? kLine
-                        : kDanger.withValues(alpha: 0.55)),
-              ),
-            ),
-            TextButton(
-              onPressed: _clearSel,
-              style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: kDim,
-                  textStyle: TextStyle(fontSize: 12.5)),
-              child: Text('取消选择'),
-            ),
-            TextButton(
-              onPressed: _exitSel,
-              style: TextButton.styleFrom(
-                  visualDensity: VisualDensity.compact,
-                  foregroundColor: kDim,
-                  textStyle: TextStyle(fontSize: 12.5)),
-              child: Text('退出'),
-            ),
-            FilledButton.icon(
-              onPressed: _batchAdd,
-              icon: Icon(Icons.playlist_add_check, size: 17),
-              label: Text('批量加课',
-                  style:
-                      TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-              style: FilledButton.styleFrom(
-                  visualDensity: VisualDensity.compact),
-            ),
-          ],
-        ),
+            );
+          }
+          return Row(
+            children: [
+              label,
+              Spacer(),
+              for (final a in acts) ...[SizedBox(width: 4), a],
+            ],
+          );
+        }),
       ),
     );
   }
