@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../data/db.dart';
 import '../models.dart';
+import '../palette.dart';
+import '../responsive.dart';
 import '../theme.dart';
 
 /// 单元格最终展示内容（已叠加临时调课）
@@ -46,7 +48,19 @@ class _TimetablePageState extends State<TimetablePage> {
   @override
   void initState() {
     super.initState();
+    Pal.rev.addListener(_onPalette);
     _load();
+  }
+
+  void _onPalette() {
+    if (!mounted) return;
+    _reload();
+  }
+
+  @override
+  void dispose() {
+    Pal.rev.removeListener(_onPalette);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -165,7 +179,7 @@ class _TimetablePageState extends State<TimetablePage> {
     setState(() => _viewWeek = v);
   }
 
-  // 编辑
+  // ── 编辑 ────────────────────────────────────────────
 
   Future<void> _openEditor(int wd, int p, Lesson? base) async {
     final isNew = base == null;
@@ -186,7 +200,7 @@ class _TimetablePageState extends State<TimetablePage> {
     }
     final maxSpan = _periods - p + 1;
     if (span > maxSpan) span = maxSpan;
-    // 段数选择上限：默认 4，但必须容得下当前块的长度
+    // 段数选择上限：默认 4，但必须容得下当前块的长度，否则选中项会不存在
     var segMax = 4;
     if (segMax > maxSpan) segMax = maxSpan;
     if (segMax < span) segMax = span;
@@ -443,7 +457,7 @@ class _TimetablePageState extends State<TimetablePage> {
         ),
       );
 
-  // 界面
+  // ── 界面 ────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -453,7 +467,9 @@ class _TimetablePageState extends State<TimetablePage> {
         _buildDayHeader(),
         const SizedBox(height: 2),
         Expanded(
-          child: _loading
+          child: ContentWidth(
+            maxWidth: BP.grid,
+            child: _loading
               ? const Center(child: CircularProgressIndicator())
               : LayoutBuilder(builder: (ctx, cons) {
                   final h = cons.maxHeight / _periods;
@@ -489,6 +505,7 @@ class _TimetablePageState extends State<TimetablePage> {
                     ),
                   );
                 }),
+          ),
         ),
       ],
     );
@@ -526,16 +543,19 @@ class _TimetablePageState extends State<TimetablePage> {
             right: 0,
             top: (b.start - 1) * h + 1,
             height: b.span * h - 2,
-            child: _blockWidget(wd, b),
+            child: _blockWidget(wd, b, h),
           ),
       ],
     );
   }
 
-  Widget _blockWidget(int wd, _Block b) {
+  Widget _blockWidget(int wd, _Block b, double h) {
     final v = b.v;
     final c = v.color;
     final big = b.span >= 2;
+    // 字号跟着行高走：平板行高大，字也应该变大，否则色块里空一大片
+    final fs = (h * 0.24).clamp(10.5, 17.0);
+    final subFs = (fs * 0.72).clamp(8.0, 12.0);
     return Material(
       color: v.cancelled ? kCard2 : c.withValues(alpha: 0.20),
       borderRadius: BorderRadius.circular(6),
@@ -561,7 +581,7 @@ class _TimetablePageState extends State<TimetablePage> {
                   maxLines: big ? 3 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: big ? 13 : 11.5,
+                    fontSize: big ? fs * 1.05 : fs,
                     height: 1.15,
                     fontWeight: FontWeight.w700,
                     color: v.cancelled ? kDim : c,
@@ -575,7 +595,7 @@ class _TimetablePageState extends State<TimetablePage> {
                   alignment: Alignment.topRight,
                   child: Text(v.badge,
                       style: TextStyle(
-                          fontSize: 8,
+                          fontSize: subFs * 0.85,
                           height: 1,
                           color: c.withValues(alpha: 0.9))),
                 ),
@@ -587,7 +607,7 @@ class _TimetablePageState extends State<TimetablePage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        fontSize: 9, color: c.withValues(alpha: 0.8)),
+                        fontSize: subFs, color: c.withValues(alpha: 0.8)),
                   ),
                 ),
             ],
@@ -623,7 +643,7 @@ class _TimetablePageState extends State<TimetablePage> {
               ),
               child: Text(
                 '第 $_viewWeek 周 · ${_viewWeek.isOdd ? "单" : "双"}',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 12.5, fontWeight: FontWeight.w600, color: kAcc),
               ),
             ),
