@@ -335,8 +335,9 @@ class _TodayPageState extends State<TodayPage> {
         _emptyCard('没有待办\n空闲时间由你决定'),
     ];
 
-    // 平板 / 横屏：左边时间轴，右边待办，两边各自滚动
-    if (isWideScreen(context)) {
+    // 平板 / 横屏：左边时间轴，右边待办，两边各自滚动。
+    // 阈值比 nav 断点（900）更高：窗口只有 900~1100 时两栏都太窄，不如一栏。
+    if (MediaQuery.sizeOf(context).width >= 1100) {
       return ContentWidth(
         maxWidth: 1400,
         child: Row(
@@ -345,7 +346,7 @@ class _TodayPageState extends State<TodayPage> {
             Expanded(
               flex: 3,
               child: ListView(
-                padding: EdgeInsets.fromLTRB(22, 10, 12, 24),
+                padding: EdgeInsets.fromLTRB(24, 12, 16, 24),
                 children: [...head, ...timelineBody, ...foot],
               ),
             ),
@@ -353,7 +354,7 @@ class _TodayPageState extends State<TodayPage> {
             Expanded(
               flex: 2,
               child: ListView(
-                padding: EdgeInsets.fromLTRB(18, 16, 22, 24),
+                padding: EdgeInsets.fromLTRB(20, 18, 24, 24),
                 children: sideBody,
               ),
             ),
@@ -460,6 +461,7 @@ class _TodayPageState extends State<TodayPage> {
           Icons.check_circle_outline,
           onTap: () => _toggle(t),
           badge: t.priority == 2 ? '重要' : null,
+          tag: '计划',
         ),
       ));
     }

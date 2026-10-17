@@ -18,10 +18,12 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
+  // 图标选择原则：一个东西只能有一种形象，别让「课表」和「日历」都长成日历。
+  // 课表 = 表格（grid_on），日历 = 月历（calendar_month），计划 = 清单（checklist）。
   static List<_Dest> _dests = [
     _Dest('今日', Icons.wb_sunny_outlined, Icons.wb_sunny),
-    _Dest('课表', Icons.calendar_month_outlined, Icons.calendar_month),
-    _Dest('日历', Icons.grid_view_outlined, Icons.grid_view),
+    _Dest('课表', Icons.grid_on_outlined, Icons.grid_on),
+    _Dest('日历', Icons.calendar_month_outlined, Icons.calendar_month),
     _Dest('计划', Icons.checklist_outlined, Icons.checklist),
     _Dest('我的', Icons.person_outline, Icons.person),
   ];
@@ -40,38 +42,63 @@ class _HomeShellState extends State<HomeShell> {
     final body = SafeArea(bottom: !wide, child: _page(_index));
 
     if (wide) {
-      // 平板 / 横屏：左侧竖排导航，右侧留满内容区
+      // 平板 / 横屏：左侧竖排导航。自己画而不是用 NavigationRail，
+      // 因为 5 个 Tab 时 M3 的默认 rail 会把标签压得很紧，还没法加顶部徽标。
       return Scaffold(
         body: SafeArea(
           child: Row(
             children: [
-              NavigationRail(
-                selectedIndex: _index,
-                onDestinationSelected: (i) => setState(() => _index = i),
-                labelType: NavigationRailLabelType.all,
-                backgroundColor: kCard,
-                indicatorColor: kAcc.withValues(alpha: 0.20),
-                selectedIconTheme: IconThemeData(color: kAcc, size: 24),
-                unselectedIconTheme: IconThemeData(color: kDim, size: 22),
-                selectedLabelTextStyle: TextStyle(
-                    color: kAcc, fontSize: 12, fontWeight: FontWeight.w600),
-                unselectedLabelTextStyle:
-                    TextStyle(color: kDim, fontSize: 12),
-                leading: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                  child: Icon(Icons.check_box_outlined,
-                      color: kAcc, size: 26),
+              Container(
+                width: 96,
+                decoration: BoxDecoration(
+                  color: kCard,
+                  border: Border(right: BorderSide(color: kLine)),
                 ),
-                destinations: [
-                  for (final d in _dests)
-                    NavigationRailDestination(
-                      icon: Icon(d.icon),
-                      selectedIcon: Icon(d.active),
-                      label: Text(d.label),
+                child: Column(
+                  children: [
+                    SizedBox(height: 14),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: kAcc.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.check_box_outlined,
+                          color: kAcc, size: 22),
                     ),
-                ],
+                    SizedBox(height: 7),
+                    Text('计划盒',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: kFg)),
+                    SizedBox(height: 12),
+                    Divider(height: 1, color: kLine),
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        children: [
+                          for (var i = 0; i < _dests.length; i++) _railItem(i),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 14, top: 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.cloud_off, size: 11, color: kFaint),
+                          SizedBox(width: 4),
+                          Text('离线',
+                              style:
+                                  TextStyle(fontSize: 10, color: kFaint)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              VerticalDivider(width: 1, thickness: 1, color: kLine),
               Expanded(child: body),
             ],
           ),
@@ -95,6 +122,42 @@ class _HomeShellState extends State<HomeShell> {
               label: d.label,
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _railItem(int i) {
+    final d = _dests[i];
+    final sel = i == _index;
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      child: Material(
+        color: sel ? kAcc.withValues(alpha: 0.16) : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => setState(() => _index = i),
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 9),
+            child: Column(
+              children: [
+                Icon(sel ? d.active : d.icon,
+                    size: 22, color: sel ? kAcc : kDim),
+                SizedBox(height: 4),
+                Text(
+                  d.label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.1,
+                    fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
+                    color: sel ? kAcc : kDim,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
