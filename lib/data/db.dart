@@ -15,7 +15,7 @@ class DB {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'planbox.db'),
-      version: 2,
+      version: 3,
       onCreate: (db, v) async {
         await db.execute('''CREATE TABLE lesson(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -37,7 +37,15 @@ class DB {
           priority INTEGER NOT NULL DEFAULT 1,
           done INTEGER NOT NULL DEFAULT 0,
           in_pool INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL)''');
+          created_at INTEGER NOT NULL,
+          note TEXT NOT NULL DEFAULT '',
+          estimate INTEGER NOT NULL DEFAULT 0,
+          repeat_kind INTEGER NOT NULL DEFAULT 0,
+          repeat_days INTEGER NOT NULL DEFAULT 0,
+          repeat_until INTEGER,
+          subtasks TEXT NOT NULL DEFAULT '',
+          done_count INTEGER NOT NULL DEFAULT 0,
+          last_done INTEGER)''');
         await db.execute('''CREATE TABLE lesson_override(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           lesson_id INTEGER NOT NULL,
@@ -50,32 +58,53 @@ class DB {
             'CREATE TABLE setting(key TEXT PRIMARY KEY, value TEXT)');
       },
       onUpgrade: (db, oldV, newV) async {
-        if (oldV < 2) {
-          Future<void> addCol(String t, String c) async {
-            try {
-              await db.execute('ALTER TABLE $t ADD COLUMN $c');
-            } catch (_) {}
-          }
+        Future<void> tryExec(String sql) async {
+          try {
+            await db.execute(sql);
+          } catch (_) {}
+        }
 
-          await addCol('lesson', 'start_week INTEGER NOT NULL DEFAULT 1');
-          await addCol('lesson', 'end_week INTEGER NOT NULL DEFAULT 20');
-          await addCol('task', 'start_at INTEGER');
-          await addCol('task', 'in_pool INTEGER NOT NULL DEFAULT 0');
-          await db.execute('''CREATE TABLE IF NOT EXISTS lesson_override(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            lesson_id INTEGER NOT NULL,
-            week_no INTEGER NOT NULL,
-            cancelled INTEGER NOT NULL DEFAULT 0,
-            subject TEXT,
-            room TEXT,
-            teacher TEXT)''');
+        if (oldV < 2) {
+          const cols = [
+            'ALTER TABLE lesson ADD COLUMN start_week INTEGER NOT NULL DEFAULT 1',
+            'ALTER TABLE lesson ADD COLUMN end_week INTEGER NOT NULL DEFAULT 20',
+            'ALTER TABLE task ADD COLUMN start_at INTEGER',
+            'ALTER TABLE task ADD COLUMN in_pool INTEGER NOT NULL DEFAULT 0',
+            '''CREATE TABLE IF NOT EXISTS lesson_override(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              lesson_id INTEGER NOT NULL,
+              week_no INTEGER NOT NULL,
+              cancelled INTEGER NOT NULL DEFAULT 0,
+              subject TEXT,
+              room TEXT,
+              teacher TEXT)''',
+          ];
+          for (final c in cols) {
+            await tryExec(c);
+          }
+        }
+
+        if (oldV < 3) {
+          const cols = [
+            "ALTER TABLE task ADD COLUMN note TEXT NOT NULL DEFAULT ''",
+            'ALTER TABLE task ADD COLUMN estimate INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE task ADD COLUMN repeat_kind INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE task ADD COLUMN repeat_days INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE task ADD COLUMN repeat_until INTEGER',
+            "ALTER TABLE task ADD COLUMN subtasks TEXT NOT NULL DEFAULT ''",
+            'ALTER TABLE task ADD COLUMN done_count INTEGER NOT NULL DEFAULT 0',
+            'ALTER TABLE task ADD COLUMN last_done INTEGER',
+          ];
+          for (final c in cols) {
+            await tryExec(c);
+          }
         }
       },
     );
     return _db!;
   }
 
-  // 课表
+  // ── 课表 ──────────────────────────────────────────
   Future<List<Lesson>> lessons() async {
     final db = await _open();
     final rows = await db.query('lesson', orderBy: 'weekday, period');
@@ -131,7 +160,24 @@ class DB {
         whereArgs: [weekday, period, weekType]);
   }
 
-  // 临时调课
+  /// 按科目重算颜色（切换科目色板后调用，让旧课表也变色）
+  Future<int> recolorLessons({required int Function(String) colorOf}) async {
+    final db = await _open();
+    final rows = await db.query('lesson');
+    var n = 0;
+    for (final r in rows) {
+      final l = Lesson.fromMap(r);
+      final c = colorOf(l.subject);
+      if (c != l.color) {
+        await db.update('lesson', {'color': c},
+            where: 'id=?', whereArgs: [l.id]);
+        n++;
+      }
+    }
+    return n;
+  }
+
+  // ── 临时调课 ──────────────────────────────────────
   Future<List<Override>> overrides() async {
     final db = await _open();
     final rows = await db.query('lesson_override');
@@ -159,7 +205,7 @@ class DB {
         where: 'lesson_id=? AND week_no=?', whereArgs: [lessonId, weekNo]);
   }
 
-  // 计划
+  // ── 计划 ──────────────────────────────────────────
   Future<List<Task>> tasks() async {
     final db = await _open();
     final rows = await db.query('task',
@@ -176,12 +222,28 @@ class DB {
     }
   }
 
+  /// 勾选 / 取消勾选。重复计划会就地推进到下一次，而不是消失。
+  Future<void> toggleTask(Task t) async {
+    if (t.done) {
+      t.done = false;
+    } else {
+      t.advanceAfterDone();
+    }
+    await saveTask(t);
+  }
+
   Future<void> deleteTask(int id) async {
     final db = await _open();
     await db.delete('task', where: 'id=?', whereArgs: [id]);
   }
 
-  // 设置
+  /// 清理所有已完成的计划，返回删除条数
+  Future<int> clearDoneTasks() async {
+    final db = await _open();
+    return db.delete('task', where: 'done=1');
+  }
+
+  // ── 设置 ──────────────────────────────────────────
   Future<String?> getSetting(String key) async {
     final db = await _open();
     final rows =
@@ -233,10 +295,10 @@ class DB {
     return kDefaultPeriodTimes;
   }
 
-  Future<void> setPeriodTimes(List<PeriodTime> list) => setSetting(
-      'period_times', jsonEncode(list.map((e) => e.toJson()).toList()));
+  Future<void> setPeriodTimes(List<PeriodTime> list) =>
+      setSetting('period_times', jsonEncode(list.map((e) => e.toJson()).toList()));
 
-  /// 当前周次：优先按开学日期自动算，否则用存下的手动值
+  /// 当前周次：优先按开学日期自动算，否则用手动值
   Future<int> currentWeek() async {
     final start = await semesterStart();
     final total = await totalWeeks();
