@@ -25,3 +25,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+# file_picker 8.x 自己按 compileSdk 34 编译，但新版 flutter_plugin_android_lifecycle
+# 的 aar 元数据要求 compileSdk 36，直接构建会被 checkAarMetadata 拦下。
+# 钉回 2.0.20（要求 34），给 file_picker 留出匹配的编译级别。
+dependency_overrides:
+  flutter_plugin_android_lifecycle: 2.0.20
