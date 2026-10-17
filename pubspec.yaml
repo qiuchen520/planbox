@@ -1,22 +1,16 @@
 name: planbox
 description: "PlanBox（计划盒）— 离线优先的学生计划工具：课表 / 作业 / 打卡 / 番茄钟。"
 publish_to: 'none'
-version: 0.3.0+3
-
+version: 0.4.0+4
 environment:
   sdk: '>=3.0.0 <4.0.0'
-
 dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
   sqflite: ^2.3.3
   path: ^1.9.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.2
-
-flutter:
-  uses-material-design: true
