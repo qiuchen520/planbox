@@ -1,7 +1,7 @@
 name: planbox
 description: "PlanBox（计划盒）— 离线优先的学生计划工具：课表 / 作业 / 打卡 / 番茄钟。"
 publish_to: 'none'
-version: 0.5.0+13
+version: 0.5.1+14
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
@@ -12,10 +12,9 @@ dependencies:
   sqflite: ^2.3.3
   path: ^1.9.0
   path_provider: ^2.1.4
-  # 通知：本地通知 + 时区（zonedSchedule 必须给时区，否则时间会算错）
+  # 通知：本地通知 + 时区（时区由 Dart 侧按偏移量推断，不依赖原生插件）
   flutter_local_notifications: ^17.2.4
   timezone: ^0.9.4
-  flutter_timezone: '>=3.0.0 <4.0.0'
   # 备份：分享导出 + 选择文件导入
   share_plus: ^10.0.2
   file_picker: ^8.1.2

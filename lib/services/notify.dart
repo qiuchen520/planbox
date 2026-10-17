@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
@@ -36,14 +35,41 @@ class Notify {
 
   bool get ready => _ready;
 
+  // ── 时区推断 ──────────────────────────────────────
+  /// 不用 flutter_timezone 插件：那个插件的 Kotlin 目标写死 1.8，和 Java 11
+  /// 冲突，会把 CI 编译直接搞挂。改成「拿系统 UTC 偏移量去库里找同时区的地方」。
+  /// 偏移相同的城市很多（+8 有上海、台北、新加坡…），所以先按常用顺序试，
+  /// 都对不上再扫全库兜底。对提醒而言，只要偏移和夏令时规则对得上就够了。
+  static const _tzCandidates = <String>[
+    'Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Singapore',
+    'Asia/Tokyo', 'Asia/Seoul', 'Asia/Bangkok', 'Asia/Kolkata', 'Asia/Dubai',
+    'Europe/Moscow', 'Europe/Berlin', 'Europe/Paris', 'Europe/London',
+    'America/New_York', 'America/Chicago', 'America/Denver',
+    'America/Los_Angeles', 'Australia/Sydney', 'Pacific/Auckland', 'UTC',
+  ];
+
+  static String _guessTzName() {
+    final offMin = DateTime.now().timeZoneOffset.inMinutes;
+    for (final n in _tzCandidates) {
+      try {
+        if (tz.getLocation(n).currentTimeZone.offset ~/ 60000 == offMin) return n;
+      } catch (_) {
+        // 这个名字不在库里，跳过
+      }
+    }
+    for (final loc in tz.timeZoneDatabase.locations.values) {
+      if (loc.currentTimeZone.offset ~/ 60000 == offMin) return loc.name;
+    }
+    return 'Asia/Shanghai';
+  }
+
   // ── 初始化 ────────────────────────────────────────
   Future<void> init() async {
     if (_ready) return;
     try {
       tzdata.initializeTimeZones();
       try {
-        final name = await FlutterTimezone.getLocalTimezone();
-        tz.setLocalLocation(tz.getLocation(name));
+        tz.setLocalLocation(tz.getLocation(_guessTzName()));
       } catch (e) {
         // 拿不到时区名就退回上海，至少不会差 8 小时
         tz.setLocalLocation(tz.getLocation('Asia/Shanghai'));

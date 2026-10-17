@@ -96,6 +96,29 @@ def patch_gradle() -> None:
         sys.exit("找不到 app/build.gradle(.kts)，无法开启 desugaring")
 
 
+def patch_gradle_properties() -> None:
+    """兜底：放宽 Kotlin 的 JVM target 一致性校验。
+
+    背景：某些插件（如 flutter_timezone）自己把 Kotlin 目标写死 1.8，
+    而 AGP 默认 Java 11，Kotlin 1.8+ 会把这种不一致直接判成 error：
+        Inconsistent JVM-target compatibility (11) vs (1.8)
+    强改各子模块的 jvmTarget 需要动它们的 buildscript 类路径，很容易连带崩；
+    官方给的开关就是把这个校验降级，构建照常进行（字节码跑在 Android 上没问题）。
+    """
+    props = ROOT / "android" / "gradle.properties"
+    props.parent.mkdir(parents=True, exist_ok=True)
+    line = "kotlin.jvm.target.validation.mode=warning"
+    text = props.read_text(encoding="utf-8") if props.exists() else ""
+    if "kotlin.jvm.target.validation.mode" in text:
+        print("gradle.properties 已有 jvm target 校验配置，跳过")
+        return
+    if text and not text.endswith("\n"):
+        text += "\n"
+    props.write_text(text + line + "\n", encoding="utf-8")
+    print("gradle.properties 已放宽 Kotlin jvm target 校验")
+
+
 if __name__ == "__main__":
     patch_manifest()
     patch_gradle()
+    patch_gradle_properties()
