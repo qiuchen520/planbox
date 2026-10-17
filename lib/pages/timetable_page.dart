@@ -45,6 +45,12 @@ class _TimetablePageState extends State<TimetablePage> {
   List<Override> _ovs = [];
   bool _loading = true;
 
+  // ── 多选批量 ──
+  bool _selectMode = false;
+  final Set<int> _sel = {};
+
+  static int _key(int wd, int p) => wd * 100 + p;
+
   @override
   void initState() {
     super.initState();
@@ -177,6 +183,181 @@ class _TimetablePageState extends State<TimetablePage> {
     final v = _viewWeek + delta;
     if (v < 1 || v > _total) return;
     setState(() => _viewWeek = v);
+  }
+
+  // ── 多选 ────────────────────────────────────────────
+  void _toggleSel(int wd, int p) {
+    final k = _key(wd, p);
+    setState(() {
+      if (!_sel.remove(k)) _sel.add(k);
+    });
+  }
+
+  void _enterSel(int wd, int p) {
+    setState(() {
+      _selectMode = true;
+      if (!_sel.contains(_key(wd, p))) _sel.add(_key(wd, p));
+    });
+  }
+
+  void _exitSel() {
+    setState(() {
+      _selectMode = false;
+      _sel.clear();
+    });
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    final m = ScaffoldMessenger.maybeOf(context);
+    m?.clearSnackBars();
+    m?.showSnackBar(SnackBar(
+      content: Text(msg),
+      duration: const Duration(milliseconds: 1600),
+    ));
+  }
+
+  /// 批量给选中的格子铺课
+  Future<void> _batchAdd() async {
+    if (_sel.isEmpty) {
+      _toast('先点几个格子');
+      return;
+    }
+    final n = _sel.length;
+    final subj = TextEditingController();
+    final room = TextEditingController();
+    int wStart = 1;
+    int wEnd = _total;
+    int wt = 0;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: Text('批量加课 · 已选 $n 格'),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: subj,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                        labelText: '科目', hintText: '语文 / 数学 / 英语'),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final s in kSubjects)
+                        ActionChip(
+                          label: Text(s, style: const TextStyle(fontSize: 12)),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () => setDlg(() => subj.text = s),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _numDd(
+                          label: '起始周',
+                          value: wStart,
+                          max: _total,
+                          suffix: '周',
+                          onChanged: (v) => setDlg(() {
+                            wStart = v;
+                            if (wEnd < wStart) wEnd = wStart;
+                          }),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _numDd(
+                          label: '结束周',
+                          value: wEnd,
+                          max: _total,
+                          suffix: '周',
+                          onChanged: (v) => setDlg(() {
+                            wEnd = v;
+                            if (wEnd < wStart) wStart = wEnd;
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment(value: 0, label: Text('全周')),
+                      ButtonSegment(value: 1, label: Text('单周')),
+                      ButtonSegment(value: 2, label: Text('双周')),
+                    ],
+                    selected: {wt},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => setDlg(() => wt = s.first),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: room,
+                    decoration: const InputDecoration(labelText: '地点（可空）'),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('选中的格子若已有课会被覆盖',
+                      style: TextStyle(fontSize: 11, color: kDim)),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('铺上去')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return;
+    final s = subj.text.trim();
+    if (s.isEmpty) {
+      _toast('科目不能为空');
+      return;
+    }
+    final color = colorForSubject(s).toARGB32();
+    final keys = List<int>.from(_sel);
+    for (final k in keys) {
+      final wd = k ~/ 100;
+      final p = k % 100;
+      for (final old in _all.where((l) => l.weekday == wd && l.period == p)) {
+        if (old.id != null) await DB.i.deleteLesson(old.id!);
+      }
+      await DB.i.saveSpan(
+        Lesson(
+          weekday: wd,
+          period: p,
+          subject: s,
+          room: room.text.trim(),
+          teacher: '',
+          weekType: wt,
+          startWeek: wStart,
+          endWeek: wEnd,
+          color: color,
+        ),
+        p,
+        p,
+      );
+    }
+    _exitSel();
+    await _reload();
+    _toast('已铺 $s 到 $n 格');
   }
 
   // ── 编辑 ────────────────────────────────────────────
@@ -470,86 +651,130 @@ class _TimetablePageState extends State<TimetablePage> {
           child: ContentWidth(
             maxWidth: BP.grid,
             child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : LayoutBuilder(builder: (ctx, cons) {
-                  final h = cons.maxHeight / _periods;
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(6, 0, 8, 6),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                          width: 22,
-                          child: Column(
-                            children: [
-                              for (var p = 1; p <= _periods; p++)
-                                Expanded(
-                                  child: Center(
-                                    child: Text('$p',
-                                        style: const TextStyle(
-                                            fontSize: 10, color: kDim)),
+                ? const Center(child: CircularProgressIndicator())
+                : LayoutBuilder(builder: (ctx, cons) {
+                    // 行高只用来定字号，布局完全由 flex 决定，不会错位
+                    final h = cons.maxHeight / _periods;
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(6, 0, 8, 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                            width: 22,
+                            child: Column(
+                              children: [
+                                for (var p = 1; p <= _periods; p++)
+                                  Expanded(
+                                    child: Center(
+                                      child: Text('$p',
+                                          style: const TextStyle(
+                                              fontSize: 10, color: kDim)),
+                                    ),
                                   ),
-                                ),
-                            ],
-                          ),
-                        ),
-                        for (var wd = 1; wd <= 7; wd++)
-                          Expanded(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 1.5),
-                              child: _dayColumn(wd, h),
+                              ],
                             ),
                           ),
-                      ],
-                    ),
-                  );
-                }),
+                          for (var wd = 1; wd <= 7; wd++)
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 1.5),
+                                child: _dayColumn(wd, h),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  }),
           ),
         ),
+        if (_selectMode) _buildSelBar(),
       ],
     );
   }
 
+  /// 一列：色块和空格子都进同一个 Column 的 Expanded，
+  /// 色块跨几节就 flex 几份，所以永远不会和行错位。
   Widget _dayColumn(int wd, double h) {
     final blocks = _blocksFor(wd);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 底层：整格热区，点空位直接新建
-        Column(
-          children: [
-            for (var p = 1; p <= _periods; p++)
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _openEditor(wd, p, null),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 1),
-                    decoration: BoxDecoration(
-                      color:
-                          wd == _todayWd ? kCard2 : kCard.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
+    final byStart = {for (final b in blocks) b.start: b};
+    final slots = <Widget>[];
+    var p = 1;
+    while (p <= _periods) {
+      final b = byStart[p];
+      if (b != null) {
+        slots.add(_blockSlot(wd, b, h));
+        p += b.span;
+      } else {
+        slots.add(_emptySlot(wd, p, h));
+        p += 1;
+      }
+    }
+    return Column(children: slots);
+  }
+
+  Widget _emptySlot(int wd, int p, double h) {
+    final k = _key(wd, p);
+    final selected = _sel.contains(k);
+    final isToday = wd == _todayWd;
+    return Expanded(
+      flex: 1,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () =>
+                _selectMode ? _toggleSel(wd, p) : _openEditor(wd, p, null),
+            onLongPress: () => _enterSel(wd, p),
+            child: Container(
+              decoration: BoxDecoration(
+                color: selected
+                    ? kAcc.withValues(alpha: 0.18)
+                    : isToday
+                        ? kAcc.withValues(alpha: 0.06)
+                        : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: selected
+                      ? kAcc
+                      : isToday
+                          ? kAcc.withValues(alpha: 0.30)
+                          : kLine,
+                  width: selected ? 1.6 : 1,
                 ),
               ),
-          ],
-        ),
-        // 上层：合并后的色块
-        for (final b in blocks)
-          Positioned(
-            left: 0,
-            right: 0,
-            top: (b.start - 1) * h + 1,
-            height: b.span * h - 2,
-            child: _blockWidget(wd, b, h),
+              child: selected
+                  ? Center(
+                      child: Icon(Icons.check,
+                          size: (h * 0.30).clamp(10.0, 16.0), color: kAcc),
+                    )
+                  : null,
+            ),
           ),
-      ],
+        ),
+      ),
     );
   }
 
-  Widget _blockWidget(int wd, _Block b, double h) {
+  Widget _blockSlot(int wd, _Block b, double h) {
+    var selCount = 0;
+    for (var i = 0; i < b.span; i++) {
+      if (_sel.contains(_key(wd, b.start + i))) selCount++;
+    }
+    final full = selCount == b.span;
+    return Expanded(
+      flex: b.span,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: _blockWidget(wd, b, h, selCount > 0, full),
+      ),
+    );
+  }
+
+  Widget _blockWidget(int wd, _Block b, double h, bool selected, bool full) {
     final v = b.v;
     final c = v.color;
     final big = b.span >= 2;
@@ -561,13 +786,35 @@ class _TimetablePageState extends State<TimetablePage> {
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
-        onTap: () => _openEditor(wd, b.start, v.base),
+        onTap: () {
+          if (_selectMode) {
+            setState(() {
+              for (var i = 0; i < b.span; i++) {
+                final k = _key(wd, b.start + i);
+                if (full) {
+                  _sel.remove(k);
+                } else {
+                  _sel.add(k);
+                }
+              }
+            });
+          } else {
+            _openEditor(wd, b.start, v.base);
+          }
+        },
+        onLongPress: () {
+          if (!_selectMode) _enterSel(wd, b.start);
+        },
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: v.cancelled ? kLine : c.withValues(alpha: 0.55),
-              width: v.modified ? 1.6 : 1,
+              color: selected
+                  ? kAcc
+                  : v.cancelled
+                      ? kLine
+                      : c.withValues(alpha: 0.55),
+              width: selected ? 1.8 : (v.modified ? 1.6 : 1),
             ),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
@@ -617,6 +864,50 @@ class _TimetablePageState extends State<TimetablePage> {
     );
   }
 
+  Widget _buildSelBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 6, 10, 10),
+      decoration: BoxDecoration(
+        color: kCard2,
+        border: Border(top: BorderSide(color: kLine)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Icon(Icons.checklist_rounded, size: 18, color: kAcc),
+            const SizedBox(width: 8),
+            Text('已选 ${_sel.length} 格',
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 10),
+            const Text('点格子加/减',
+                style: TextStyle(fontSize: 11, color: kDim)),
+            const Spacer(),
+            TextButton(
+              onPressed:
+                  _sel.isEmpty ? null : () => setState(() => _sel.clear()),
+              child: const Text('清空', style: TextStyle(fontSize: 12)),
+            ),
+            const SizedBox(width: 6),
+            TextButton(
+              onPressed: _exitSel,
+              child: const Text('退出', style: TextStyle(fontSize: 12)),
+            ),
+            const SizedBox(width: 6),
+            FilledButton.icon(
+              onPressed: _batchAdd,
+              icon: const Icon(Icons.playlist_add_check, size: 17),
+              label: const Text('批量加课',
+                  style:
+                      TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopBar() {
     final isCurrent = _viewWeek == _currentWeek;
     return Padding(
@@ -628,6 +919,7 @@ class _TimetablePageState extends State<TimetablePage> {
           const SizedBox(width: 10),
           IconButton(
             visualDensity: VisualDensity.compact,
+            tooltip: '上一周',
             onPressed: () => _moveWeek(-1),
             icon: const Icon(Icons.chevron_left, size: 20),
           ),
@@ -650,6 +942,7 @@ class _TimetablePageState extends State<TimetablePage> {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
+            tooltip: '下一周',
             onPressed: () => _moveWeek(1),
             icon: const Icon(Icons.chevron_right, size: 20),
           ),
@@ -659,6 +952,22 @@ class _TimetablePageState extends State<TimetablePage> {
               child: const Text('本周', style: TextStyle(fontSize: 12)),
             ),
           const Spacer(),
+          TextButton.icon(
+            onPressed: () {
+              if (_selectMode) {
+                _exitSel();
+              } else {
+                setState(() => _selectMode = true);
+              }
+            },
+            icon: Icon(_selectMode ? Icons.close : Icons.checklist_rounded,
+                size: 17),
+            label: Text(_selectMode ? '退出多选' : '批量',
+                style: const TextStyle(fontSize: 12)),
+            style: TextButton.styleFrom(
+              foregroundColor: _selectMode ? kDanger : kAcc,
+            ),
+          ),
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: '使用提示',
@@ -691,8 +1000,7 @@ class _TimetablePageState extends State<TimetablePage> {
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, int.tryParse(ctrl.text.trim())),
+            onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text.trim())),
             child: const Text('确定'),
           ),
         ],
@@ -711,6 +1019,9 @@ class _TimetablePageState extends State<TimetablePage> {
         content: const Text(
           '· 点空格子直接加课，选「上几节」就能一次铺满连堂\n'
           '· 相邻的同一门课会自动黏成一块，点一下改整块\n'
+          '· 长按任意格子进入多选，再点别的格子加/减，\n'
+          '  底部「批量加课」一次把科目铺到所有选中格\n'
+          '· 顶部「批量」按钮也能手动进多选\n'
           '· 「更多设置」里可以改地点、教师、周区间、单双周\n'
           '· 勾「仅修改第 X 周」做临时调课或本周不上\n'
           '· 顶部箭头翻周，点中间胶囊直接跳周\n'
@@ -744,7 +1055,9 @@ class _TimetablePageState extends State<TimetablePage> {
                     borderRadius: BorderRadius.circular(7),
                   ),
                   child: Text(
-                    i == _todayWd ? '${_days[i - 1]}·今' : _days[i - 1],
+                    i == _todayWd ? '${_days[i - 1]}今' : _days[i - 1],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,

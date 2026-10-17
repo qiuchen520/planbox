@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// 布局断点
-/// - rail: 达到这个宽度改用侧边导航栅（平板/横屏）
+/// - rail: 达到这个宽度改用侧边导航栏（平板/横屏）
 /// - 各页面用 ContentWidth 限制正文宽度，避免平板上一行字拉得太长
 class BP {
   static const double rail = 900;
