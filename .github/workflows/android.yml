@@ -56,9 +56,11 @@ jobs:
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
 
-      - name: Attach APK to GitHub Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish to GitHub Releases (tag or main)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.1.0-build{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Dev build {0}', github.run_number) }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           files: build/app/outputs/flutter-apk/*.apk
           generate_release_notes: true
