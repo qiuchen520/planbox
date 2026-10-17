@@ -44,8 +44,7 @@ jobs:
         continue-on-error: true
         run: flutter analyze
 
-      - name: Test (non-blocking for now)
-        continue-on-error: true
+      - name: Test
         run: flutter test
 
       - name: Build release APK (split per ABI)
@@ -55,13 +54,13 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "使用 GitHub Secrets 中的签名库"
-            printf '%s' "$KEYSTORE_B64" | base64 -d > /tmp/planbox.jks
-          else
-            echo "使用仓库内 signing/planbox.jks.b64（公开仓库，安全性较低）"
-            base64 -d signing/planbox.jks.b64 > /tmp/planbox.jks
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::缺少 Secret KEYSTORE_B64，拒绝用其他钥匙签名"
+            exit 1
           fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > /tmp/planbox.jks
+          test -s /tmp/planbox.jks || { echo "::error::签名库解码失败"; exit 1; }
+          echo "已从 Secret 载入签名库（$(wc -c < /tmp/planbox.jks) 字节）"
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           echo "apksigner: $BT/apksigner"
           for f in build/app/outputs/flutter-apk/*.apk; do
@@ -85,8 +84,8 @@ jobs:
       - name: Publish to GitHub Releases (tag or main)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.4.3-build{0}', github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Dev build {0} · v0.4.3', github.run_number) }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.4.4-build{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Dev build {0} · v0.4.4', github.run_number) }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           files: build/app/outputs/flutter-apk/*.apk
           generate_release_notes: true

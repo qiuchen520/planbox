@@ -14,6 +14,8 @@ android/local.properties
 android/key.properties
 *.jks
 *.keystore
+# 签名库只走 GitHub Actions Secret（KEYSTORE_B64），任何 b64 备份都别提交
+signing/*.b64
 
 # IDE
 .idea/

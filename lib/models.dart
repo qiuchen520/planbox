@@ -303,6 +303,13 @@ class Task {
     }
   }
 
+  /// [目标日] 是否还没超过 [截止毫秒] 所在的那一天（含当天）。
+  static bool _beforeEndOfDay(int untilMs, DateTime target) {
+    final u = DateTime.fromMillisecondsSinceEpoch(untilMs);
+    final end = DateTime(u.year, u.month, u.day + 1);
+    return target.isBefore(end);
+  }
+
   /// 这条计划在 [day] 那天是否需要处理（日历视图用）。
   ///
   /// 覆盖三种情况：开始日 / 截止日 / 重复日展开。
@@ -316,7 +323,7 @@ class Task {
         if (!isRepeating) {
           hit = sd == target;
         } else if (repeatUntil == null ||
-            target.millisecondsSinceEpoch <= repeatUntil! + 86399999) {
+            _beforeEndOfDay(repeatUntil!, target)) {
           switch (repeatKind) {
             case 1:
               hit = true;
