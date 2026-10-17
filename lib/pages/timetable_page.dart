@@ -17,6 +17,14 @@ class _CellView {
       this.modified, this.base);
 }
 
+/// 竖向合并后的色块（连续同一门课）
+class _Block {
+  final int start;
+  final int span;
+  final _CellView v;
+  const _Block(this.start, this.span, this.v);
+}
+
 class TimetablePage extends StatefulWidget {
   const TimetablePage({super.key});
 
@@ -57,7 +65,6 @@ class _TimetablePageState extends State<TimetablePage> {
     });
   }
 
-  /// 重新只刷新数据，不重置当前浏览的周
   Future<void> _reload() async {
     final cur = await DB.i.currentWeek();
     final total = await DB.i.totalWeeks();
@@ -74,6 +81,10 @@ class _TimetablePageState extends State<TimetablePage> {
 
   int get _todayWd => DateTime.now().weekday;
 
+  /// 合并用的内容签名：科目/地点/教师/单双周/周区间/颜色都一样才算同一块
+  String _sigOf(Lesson l) =>
+      '${l.subject}|${l.room}|${l.teacher}|${l.weekType}|${l.startWeek}|${l.endWeek}|${l.color}';
+
   Override? _ovFor(int? lessonId, int week) {
     if (lessonId == null) return null;
     for (final o in _ovs) {
@@ -82,12 +93,13 @@ class _TimetablePageState extends State<TimetablePage> {
     return null;
   }
 
-  /// 该格在 week 周要显示什么
   _CellView? _resolve(int wd, int p) {
-    final cands =
-        _all.where((l) => l.weekday == wd && l.period == p).toList();
+    final cands = _all.where((l) => l.weekday == wd && l.period == p).toList();
     if (cands.isEmpty) return null;
-    final active = cands.where((l) => l.activeInWeek(_viewWeek)).toList();
+    final active = cands.where((l) => l.activeInWeek(_viewWeek)).toList()
+      // 单/双周优先于全周，避免同一格两条记录时选错
+      ..sort((a, b) =>
+          (a.weekType == 0 ? 1 : 0).compareTo(b.weekType == 0 ? 1 : 0));
     if (active.isEmpty) return null;
     final base = active.first;
     final ov = _ovFor(base.id, _viewWeek);
@@ -96,19 +108,55 @@ class _TimetablePageState extends State<TimetablePage> {
           false, false, base);
     }
     if (ov.cancelled) {
-      return _CellView('本周不上', '', kDim, '', true, true, base);
+      return _CellView(base.subject, '', kDim, '', true, true, base);
     }
     final s = ov.subject.isEmpty ? base.subject : ov.subject;
     return _CellView(s, ov.room.isEmpty ? base.room : ov.room, Color(base.color),
         base.badge, false, true, base);
   }
 
-  /// 该格原始记录（用于编辑）
-  Lesson? _any(int wd, int p) {
-    final list = _all.where((l) => l.weekday == wd && l.period == p).toList();
-    if (list.isEmpty) return null;
-    final active = list.where((l) => l.activeInWeek(_viewWeek));
-    return active.isNotEmpty ? active.first : list.first;
+  /// 某一列竖排合并后的色块
+  List<_Block> _blocksFor(int wd) {
+    final out = <_Block>[];
+    String? curSig;
+    _Block? cur;
+    for (var p = 1; p <= _periods; p++) {
+      final v = _resolve(wd, p);
+      if (v == null) {
+        cur = null;
+        curSig = null;
+        continue;
+      }
+      final sig = '${_sigOf(v.base)}|${v.cancelled}|${v.modified}';
+      if (cur != null && curSig == sig && cur.start + cur.span == p) {
+        cur = _Block(cur.start, cur.span + 1, cur.v);
+        out[out.length - 1] = cur;
+      } else {
+        cur = _Block(p, 1, v);
+        curSig = sig;
+        out.add(cur);
+      }
+    }
+    return out;
+  }
+
+  /// 与 base 连成一片的原始记录（用于整体替换/删除）
+  List<Lesson> _membersOf(Lesson? base) {
+    if (base == null) return [];
+    final sig = _sigOf(base);
+    final rows = _all
+        .where((l) => l.weekday == base.weekday && _sigOf(l) == sig)
+        .toList();
+    var s = base.period;
+    var e = base.period;
+    bool has(int x) => rows.any((l) => l.period == x);
+    while (s > 1 && has(s - 1)) {
+      s--;
+    }
+    while (e < _periods && has(e + 1)) {
+      e++;
+    }
+    return rows.where((l) => l.period >= s && l.period <= e).toList();
   }
 
   void _moveWeek(int delta) {
@@ -117,22 +165,31 @@ class _TimetablePageState extends State<TimetablePage> {
     setState(() => _viewWeek = v);
   }
 
-  Future<void> _edit(int wd, int p) async {
-    final base = _any(wd, p);
-    final view = _resolve(wd, p);
-    final ov = _ovFor(base?.id, _viewWeek);
+  // 编辑
 
-    final subj = TextEditingController(
-        text: view == null || view.cancelled ? (base?.subject ?? '') : view.subject);
-    final room = TextEditingController(
-        text: view == null || view.cancelled ? (base?.room ?? '') : view.room);
+  Future<void> _openEditor(int wd, int p, Lesson? base) async {
+    final isNew = base == null;
+    final view = _resolve(wd, p);
+    final ov = isNew ? null : _ovFor(base.id, _viewWeek);
+
+    final subj = TextEditingController(text: view?.subject ?? '');
+    final room = TextEditingController(text: view?.room ?? '');
     final teacher = TextEditingController(text: base?.teacher ?? '');
 
-    int pStart = base?.period ?? p;
-    int pEnd = base?.period ?? p;
     int wStart = base?.startWeek ?? 1;
     int wEnd = base?.endWeek ?? _total;
     int wt = base?.weekType ?? 0;
+    int span = 1;
+    if (!isNew) {
+      final blk = _blocksFor(wd).where((b) => b.start == p).toList();
+      span = blk.isEmpty ? 1 : blk.first.span;
+    }
+    final maxSpan = _periods - p + 1;
+    if (span > maxSpan) span = maxSpan;
+    // 段数选择上限：默认 4，但必须容得下当前块的长度
+    var segMax = 4;
+    if (segMax > maxSpan) segMax = maxSpan;
+    if (segMax < span) segMax = span;
     bool onlyThisWeek = false;
     bool cancelledThisWeek = ov?.cancelled ?? false;
 
@@ -140,7 +197,9 @@ class _TimetablePageState extends State<TimetablePage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => AlertDialog(
-          title: Text('周${_days[wd - 1]} · 第 $p 节 · 第 $_viewWeek 周'),
+          title: Text(isNew
+              ? '周${_days[wd - 1]} · 第 $p 节'
+              : '周${_days[wd - 1]} · 第 $p 节 · ${view?.subject ?? ''}'),
           content: SizedBox(
             width: 460,
             child: SingleChildScrollView(
@@ -150,99 +209,10 @@ class _TimetablePageState extends State<TimetablePage> {
                 children: [
                   TextField(
                     controller: subj,
-                    autofocus: base == null,
-                    decoration: const InputDecoration(labelText: '科目'),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: room,
-                          decoration: const InputDecoration(labelText: '地点'),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: TextField(
-                          controller: teacher,
-                          decoration: const InputDecoration(labelText: '教师'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _label('连堂节次'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _numDd(
-                          label: '起',
-                          value: pStart,
-                          max: _periods,
-                          suffix: '节',
-                          onChanged: (v) => setDlg(() {
-                            pStart = v;
-                            if (pEnd < pStart) pEnd = pStart;
-                          }),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _numDd(
-                          label: '止',
-                          value: pEnd,
-                          max: _periods,
-                          suffix: '节',
-                          onChanged: (v) => setDlg(() {
-                            pEnd = v;
-                            if (pEnd < pStart) pStart = pEnd;
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _label('上课周次'),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _numDd(
-                          label: '起始周',
-                          value: wStart,
-                          max: _total,
-                          suffix: '周',
-                          onChanged: (v) => setDlg(() {
-                            wStart = v;
-                            if (wEnd < wStart) wEnd = wStart;
-                          }),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _numDd(
-                          label: '结束周',
-                          value: wEnd,
-                          max: _total,
-                          suffix: '周',
-                          onChanged: (v) => setDlg(() {
-                            wEnd = v;
-                            if (wEnd < wStart) wStart = wEnd;
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('全周')),
-                      ButtonSegment(value: 1, label: Text('单周')),
-                      ButtonSegment(value: 2, label: Text('双周')),
-                    ],
-                    selected: {wt},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (s) => setDlg(() => wt = s.first),
+                    autofocus: isNew,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(
+                        labelText: '科目', hintText: '语文 / 数学 / 英语'),
                   ),
                   const SizedBox(height: 10),
                   Wrap(
@@ -257,32 +227,118 @@ class _TimetablePageState extends State<TimetablePage> {
                         ),
                     ],
                   ),
-                  const Divider(height: 24),
-                  if (base != null)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      value: onlyThisWeek,
-                      onChanged: (v) => setDlg(() => onlyThisWeek = v),
-                      title: Text('仅修改第 $_viewWeek 周',
-                          style: const TextStyle(fontSize: 14)),
-                      subtitle: const Text('不影响其它周次',
-                          style: TextStyle(fontSize: 11, color: kDim)),
-                    ),
-                  if (onlyThisWeek)
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      value: cancelledThisWeek,
-                      onChanged: (v) => setDlg(() => cancelledThisWeek = v),
-                      title: const Text('本周不上', style: TextStyle(fontSize: 14)),
-                    ),
+                  const SizedBox(height: 14),
+                  const Text('上几节（连堂直接选 2 节以上）',
+                      style: TextStyle(fontSize: 12, color: kDim)),
+                  const SizedBox(height: 8),
+                  SegmentedButton<int>(
+                    segments: [
+                      for (var i = 1; i <= segMax; i++)
+                        ButtonSegment(
+                            value: i, label: Text(i == 1 ? '1 节' : '$i 节')),
+                    ],
+                    selected: {span},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => setDlg(() => span = s.first),
+                  ),
+                  const SizedBox(height: 6),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    childrenPadding: EdgeInsets.zero,
+                    title: const Text('更多设置',
+                        style: TextStyle(fontSize: 13, color: kDim)),
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: room,
+                              decoration:
+                                  const InputDecoration(labelText: '地点'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: teacher,
+                              decoration:
+                                  const InputDecoration(labelText: '教师'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _numDd(
+                              label: '起始周',
+                              value: wStart,
+                              max: _total,
+                              suffix: '周',
+                              onChanged: (v) => setDlg(() {
+                                wStart = v;
+                                if (wEnd < wStart) wEnd = wStart;
+                              }),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _numDd(
+                              label: '结束周',
+                              value: wEnd,
+                              max: _total,
+                              suffix: '周',
+                              onChanged: (v) => setDlg(() {
+                                wEnd = v;
+                                if (wEnd < wStart) wStart = wEnd;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SegmentedButton<int>(
+                        segments: const [
+                          ButtonSegment(value: 0, label: Text('全周')),
+                          ButtonSegment(value: 1, label: Text('单周')),
+                          ButtonSegment(value: 2, label: Text('双周')),
+                        ],
+                        selected: {wt},
+                        showSelectedIcon: false,
+                        onSelectionChanged: (s) => setDlg(() => wt = s.first),
+                      ),
+                      if (!isNew) ...[
+                        const Divider(height: 20),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          value: onlyThisWeek,
+                          onChanged: (v) => setDlg(() => onlyThisWeek = v),
+                          title: Text('仅修改第 $_viewWeek 周',
+                              style: const TextStyle(fontSize: 14)),
+                          subtitle: const Text('临时调课，不影响其它周',
+                              style: TextStyle(fontSize: 11, color: kDim)),
+                        ),
+                        if (onlyThisWeek)
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            value: cancelledThisWeek,
+                            onChanged: (v) =>
+                                setDlg(() => cancelledThisWeek = v),
+                            title: const Text('本周不上',
+                                style: TextStyle(fontSize: 14)),
+                          ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
           actions: [
-            if (base != null)
+            if (!isNew)
               TextButton(
                 onPressed: () => Navigator.pop(ctx, 'delete'),
                 child: const Text('删除',
@@ -292,17 +348,15 @@ class _TimetablePageState extends State<TimetablePage> {
                 onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             FilledButton(
                 onPressed: () => Navigator.pop(ctx, 'save'),
-                child: const Text('保存')),
+                child: Text(isNew ? '添加' : '保存')),
           ],
         ),
       ),
     );
 
     if (res == 'delete' && base != null) {
-      if (base.id != null) {
-        await DB.i.deleteLesson(base.id!);
-      } else {
-        await DB.i.deleteLessonCell(wd, p, base.weekType);
+      for (final m in _membersOf(base)) {
+        if (m.id != null) await DB.i.deleteLesson(m.id!);
       }
       await _reload();
       return;
@@ -310,50 +364,39 @@ class _TimetablePageState extends State<TimetablePage> {
     if (res != 'save') return;
 
     final s = subj.text.trim();
-    if (onlyThisWeek && base != null && base.id != null) {
+
+    // 仅改本周 → 写入临时调课
+    if (!isNew && onlyThisWeek && base.id != null) {
       if (cancelledThisWeek) {
-        await DB.i.saveOverride(Override(
-            lessonId: base.id!, weekNo: _viewWeek, cancelled: true));
-      } else if (s.isEmpty) {
+        await DB.i.saveOverride(
+            Override(lessonId: base.id!, weekNo: _viewWeek, cancelled: true));
+      } else if (s.isEmpty || s == base.subject) {
         await DB.i.deleteOverride(base.id!, _viewWeek);
       } else {
         await DB.i.saveOverride(Override(
           lessonId: base.id!,
           weekNo: _viewWeek,
-          subject: s == base.subject ? '' : s,
-          room: room.text.trim() == base.room ? '' : room.text.trim(),
-          teacher: teacher.text.trim() == base.teacher ? '' : teacher.text.trim(),
+          subject: s,
+          room: room.text.trim(),
+          teacher: teacher.text.trim(),
         ));
       }
       await _reload();
       return;
     }
 
+    // 正常保存：先清掉原来那一片，再按新设置铺回去
+    for (final m in _membersOf(base)) {
+      if (m.id != null) await DB.i.deleteLesson(m.id!);
+    }
     if (s.isEmpty) {
-      await DB.i.deleteLessonCell(wd, p, wt);
       await _reload();
       return;
     }
-
-    // 跨度变短时，清掉原来多出来的格子
-    if (base != null && base.period > pEnd) {
-      await DB.i.deleteLessonCell(wd, base.period, base.weekType);
-    }
-    for (var i = pEnd + 1; i <= _periods; i++) {
-      final leftover = _all.where((l) =>
-          l.weekday == wd &&
-          l.period == i &&
-          l.weekType == wt &&
-          l.subject == base?.subject);
-      if (leftover.isNotEmpty && base != null && pEnd < base.period) {
-        await DB.i.deleteLessonCell(wd, i, wt);
-      }
-    }
-
     await DB.i.saveSpan(
       Lesson(
         weekday: wd,
-        period: pStart,
+        period: p,
         subject: s,
         room: room.text.trim(),
         teacher: teacher.text.trim(),
@@ -362,19 +405,11 @@ class _TimetablePageState extends State<TimetablePage> {
         endWeek: wEnd,
         color: colorForSubject(s).toARGB32(),
       ),
-      pStart,
-      pEnd,
+      p,
+      p + span - 1,
     );
-    if (base?.id != null) {
-      await DB.i.deleteOverride(base!.id!, _viewWeek);
-    }
     await _reload();
   }
-
-  Widget _label(String s) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(s, style: const TextStyle(fontSize: 12, color: kDim)),
-      );
 
   Widget _numDd({
     required String label,
@@ -386,7 +421,8 @@ class _TimetablePageState extends State<TimetablePage> {
       InputDecorator(
         decoration: InputDecoration(
           labelText: label,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<int>(
@@ -407,50 +443,178 @@ class _TimetablePageState extends State<TimetablePage> {
         ),
       );
 
+  // 界面
+
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
         _buildTopBar(),
         _buildDayHeader(),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: Column(
-                    children: [
-                      for (var p = 1; p <= _periods; p++)
-                        Expanded(child: _row(p)),
-                    ],
-                  ),
-                ),
+              : LayoutBuilder(builder: (ctx, cons) {
+                  final h = cons.maxHeight / _periods;
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(6, 0, 8, 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SizedBox(
+                          width: 22,
+                          child: Column(
+                            children: [
+                              for (var p = 1; p <= _periods; p++)
+                                Expanded(
+                                  child: Center(
+                                    child: Text('$p',
+                                        style: const TextStyle(
+                                            fontSize: 10, color: kDim)),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        for (var wd = 1; wd <= 7; wd++)
+                          Expanded(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 1.5),
+                              child: _dayColumn(wd, h),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
         ),
       ],
+    );
+  }
+
+  Widget _dayColumn(int wd, double h) {
+    final blocks = _blocksFor(wd);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 底层：整格热区，点空位直接新建
+        Column(
+          children: [
+            for (var p = 1; p <= _periods; p++)
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _openEditor(wd, p, null),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(vertical: 1),
+                    decoration: BoxDecoration(
+                      color:
+                          wd == _todayWd ? kCard2 : kCard.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        // 上层：合并后的色块
+        for (final b in blocks)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: (b.start - 1) * h + 1,
+            height: b.span * h - 2,
+            child: _blockWidget(wd, b),
+          ),
+      ],
+    );
+  }
+
+  Widget _blockWidget(int wd, _Block b) {
+    final v = b.v;
+    final c = v.color;
+    final big = b.span >= 2;
+    return Material(
+      color: v.cancelled ? kCard2 : c.withValues(alpha: 0.20),
+      borderRadius: BorderRadius.circular(6),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => _openEditor(wd, b.start, v.base),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: v.cancelled ? kLine : c.withValues(alpha: 0.55),
+              width: v.modified ? 1.6 : 1,
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+          child: Stack(
+            children: [
+              Align(
+                alignment: Alignment.topCenter,
+                child: Text(
+                  v.subject,
+                  textAlign: TextAlign.center,
+                  maxLines: big ? 3 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: big ? 13 : 11.5,
+                    height: 1.15,
+                    fontWeight: FontWeight.w700,
+                    color: v.cancelled ? kDim : c,
+                    decoration:
+                        v.cancelled ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+              ),
+              if (v.badge.isNotEmpty)
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Text(v.badge,
+                      style: TextStyle(
+                          fontSize: 8,
+                          height: 1,
+                          color: c.withValues(alpha: 0.9))),
+                ),
+              if (v.room.isNotEmpty && big)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Text(
+                    v.room,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 9, color: c.withValues(alpha: 0.8)),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildTopBar() {
     final isCurrent = _viewWeek == _currentWeek;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 12, 4),
+      padding: const EdgeInsets.fromLTRB(14, 6, 8, 2),
       child: Row(
         children: [
           const Text('课表',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 12),
+              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 10),
           IconButton(
             visualDensity: VisualDensity.compact,
             onPressed: () => _moveWeek(-1),
-            icon: const Icon(Icons.chevron_left),
+            icon: const Icon(Icons.chevron_left, size: 20),
           ),
           GestureDetector(
-            onTap: () async {
-              await _jumpWeek();
-            },
+            onTap: _jumpWeek,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
               decoration: BoxDecoration(
                 color: kAcc.withValues(alpha: isCurrent ? 0.18 : 0.10),
                 borderRadius: BorderRadius.circular(20),
@@ -460,14 +624,14 @@ class _TimetablePageState extends State<TimetablePage> {
               child: Text(
                 '第 $_viewWeek 周 · ${_viewWeek.isOdd ? "单" : "双"}',
                 style: const TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: kAcc),
+                    fontSize: 12.5, fontWeight: FontWeight.w600, color: kAcc),
               ),
             ),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
             onPressed: () => _moveWeek(1),
-            icon: const Icon(Icons.chevron_right),
+            icon: const Icon(Icons.chevron_right, size: 20),
           ),
           if (!isCurrent)
             TextButton(
@@ -479,7 +643,7 @@ class _TimetablePageState extends State<TimetablePage> {
             visualDensity: VisualDensity.compact,
             tooltip: '使用提示',
             onPressed: _showHelp,
-            icon: const Icon(Icons.help_outline, size: 20),
+            icon: const Icon(Icons.help_outline, size: 19),
           ),
         ],
       ),
@@ -507,10 +671,8 @@ class _TimetablePageState extends State<TimetablePage> {
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           FilledButton(
-            onPressed: () {
-              final n = int.tryParse(ctrl.text.trim());
-              Navigator.pop(ctx, n);
-            },
+            onPressed: () =>
+                Navigator.pop(ctx, int.tryParse(ctrl.text.trim())),
             child: const Text('确定'),
           ),
         ],
@@ -527,12 +689,12 @@ class _TimetablePageState extends State<TimetablePage> {
       builder: (ctx) => AlertDialog(
         title: const Text('课表怎么用'),
         content: const Text(
-          '· 点格子编辑科目、地点、教师\n'
-          '· 设置「起始周 / 结束周」可做半学期结课\n'
-          '· 选「单周 / 双周」自动交替，格子上有角标\n'
-          '· 点开已有课程可勾「仅修改第 X 周」，做临时调课或本周不上\n'
+          '· 点空格子直接加课，选「上几节」就能一次铺满连堂\n'
+          '· 相邻的同一门课会自动黏成一块，点一下改整块\n'
+          '· 「更多设置」里可以改地点、教师、周区间、单双周\n'
+          '· 勾「仅修改第 X 周」做临时调课或本周不上\n'
           '· 顶部箭头翻周，点中间胶囊直接跳周\n'
-          '· 周次按「开学日期」自动计算，可在「我的」里设置',
+          '· 周次按「开学日期」自动算，在「我的」里设置',
         ),
         actions: [
           TextButton(
@@ -544,114 +706,35 @@ class _TimetablePageState extends State<TimetablePage> {
 
   Widget _buildDayHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.fromLTRB(6, 2, 8, 2),
       child: Row(
         children: [
-          const SizedBox(width: 34),
+          const SizedBox(width: 22),
           for (var i = 1; i <= 7; i++)
             Expanded(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: i == _todayWd
-                      ? kAcc.withValues(alpha: 0.14)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  i == _todayWd ? '${_days[i - 1]}·今' : _days[i - 1],
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: i == _todayWd ? kAcc : kDim,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: i == _todayWd
+                        ? kAcc.withValues(alpha: 0.14)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: Text(
+                    i == _todayWd ? '${_days[i - 1]}·今' : _days[i - 1],
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: i == _todayWd ? kAcc : kDim,
+                    ),
                   ),
                 ),
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _row(int p) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 34,
-          child: Center(
-            child: Text('$p', style: const TextStyle(fontSize: 11, color: kDim)),
-          ),
-        ),
-        for (var wd = 1; wd <= 7; wd++)
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(2),
-              child: _cell(wd, p),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _cell(int wd, int p) {
-    final v = _resolve(wd, p);
-    final today = wd == _todayWd;
-    final c = v?.color ?? kAcc;
-    final bg = v == null
-        ? (today ? kCard2 : kCard)
-        : (v.cancelled
-            ? kCard2
-            : c.withValues(alpha: 0.16));
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(7),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(7),
-        onTap: () => _edit(wd, p),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(7),
-            border: Border.all(
-              color: v == null
-                  ? kLine
-                  : (v.cancelled ? kLine : c.withValues(alpha: 0.5)),
-              width: v != null && v.modified ? 1.4 : 1,
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 3),
-          child: v == null
-              ? const SizedBox.shrink()
-              : Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        v.subject,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          height: 1.1,
-                          fontWeight: FontWeight.w600,
-                          color: v.cancelled ? kDim : c,
-                          decoration:
-                              v.cancelled ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                    ),
-                    if (v.badge.isNotEmpty)
-                      Text(v.badge,
-                          style: TextStyle(
-                              fontSize: 8,
-                              height: 1,
-                              color: c.withValues(alpha: 0.85))),
-                    if (v.modified && !v.cancelled)
-                      Text('·',
-                          style: TextStyle(fontSize: 12, color: c)),
-                  ],
-                ),
-        ),
       ),
     );
   }
