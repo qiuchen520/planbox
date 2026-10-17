@@ -35,7 +35,6 @@ jobs:
           flutter create --org top --project-name planbox --platforms=android .
           cp /tmp/main.dart.bak lib/main.dart
           cp /tmp/pubspec.yaml.bak pubspec.yaml
-          # 应用显示名 -> 计划盒
           sed -i 's/android:label="planbox"/android:label="计划盒"/' android/app/src/main/AndroidManifest.xml || true
 
       - name: Install dependencies
@@ -52,6 +51,30 @@ jobs:
       - name: Build release APK (split per ABI)
         run: flutter build apk --release --split-per-abi
 
+      - name: Sign APK with fixed keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "使用 GitHub Secrets 中的签名库"
+            printf '%s' "$KEYSTORE_B64" | base64 -d > /tmp/planbox.jks
+          else
+            echo "使用仓库内 signing/planbox.jks.b64（公开仓库，安全性较低）"
+            base64 -d signing/planbox.jks.b64 > /tmp/planbox.jks
+          fi
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "apksigner: $BT/apksigner"
+          for f in build/app/outputs/flutter-apk/*.apk; do
+            "$BT/apksigner" sign \
+              --ks /tmp/planbox.jks \
+              --ks-key-alias planbox \
+              --ks-pass pass:planbox2026 \
+              --key-pass pass:planbox2026 \
+              --out "${f%.apk}-signed.apk" "$f"
+            mv "${f%.apk}-signed.apk" "$f"
+            "$BT/apksigner" verify --print-certs "$f" | head -3 || true
+          done
+
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -62,8 +85,8 @@ jobs:
       - name: Publish to GitHub Releases (tag or main)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.2.0-build{0}', github.run_number) }}
-          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Dev build {0} · v0.2', github.run_number) }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v0.3.0-build{0}', github.run_number) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('Dev build {0} · v0.3', github.run_number) }}
           prerelease: ${{ !startsWith(github.ref, 'refs/tags/') }}
           files: build/app/outputs/flutter-apk/*.apk
           generate_release_notes: true
