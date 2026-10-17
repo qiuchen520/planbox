@@ -219,6 +219,46 @@ class _TimetablePageState extends State<TimetablePage> {
     _toast('已清空 $n 格');
   }
 
+  /// 清空「选中的这些格子里的课」——注意这跟「取消选择」是两件事。
+  /// 之前只做了取消选择，按钮却叫「清空」，点了课没删，看着就像没反应。
+  Future<void> _clearCells() async {
+    if (_sel.isEmpty) {
+      _toast('先点几个格子');
+      return;
+    }
+    final n = _sel.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('清空 $n 个格子？'),
+        content: Text('这些格子里的课会被删掉，删了要重新加。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false), child: Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true), child: Text('清空')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    var removed = 0;
+    for (final k in List<int>.from(_sel)) {
+      final wd = k ~/ 100;
+      final p = k % 100;
+      for (final old in _all.where((l) => l.weekday == wd && l.period == p)) {
+        if (old.id != null) {
+          await DB.i.deleteLesson(old.id!);
+          removed++;
+        }
+      }
+    }
+    await _load();
+    if (!mounted) return;
+    setState(_sel.clear);
+    _toast(removed == 0 ? '这些格子本来就空着' : '已清空 $removed 节课');
+  }
+
   void _toast(String msg) {
     if (!mounted) return;
     final m = ScaffoldMessenger.maybeOf(context);
@@ -914,14 +954,25 @@ class _TimetablePageState extends State<TimetablePage> {
               ],
             ),
             OutlinedButton.icon(
-              onPressed: _clearSel,
+              onPressed: _clearCells,
               icon: Icon(Icons.layers_clear_outlined, size: 16),
-              label: Text('清空', style: TextStyle(fontSize: 12.5)),
+              label: Text('清空格子', style: TextStyle(fontSize: 12.5)),
               style: OutlinedButton.styleFrom(
                 visualDensity: VisualDensity.compact,
-                foregroundColor: n == 0 ? kDim : kFg,
-                side: BorderSide(color: n == 0 ? kLine : kDim),
+                foregroundColor: n == 0 ? kDim : kDanger,
+                side: BorderSide(
+                    color: n == 0
+                        ? kLine
+                        : kDanger.withValues(alpha: 0.55)),
               ),
+            ),
+            TextButton(
+              onPressed: _clearSel,
+              style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  foregroundColor: kDim,
+                  textStyle: TextStyle(fontSize: 12.5)),
+              child: Text('取消选择'),
             ),
             TextButton(
               onPressed: _exitSel,
