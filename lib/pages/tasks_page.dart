@@ -479,7 +479,7 @@ class _TasksPageState extends State<TasksPage> {
         padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
         child: Row(
           children: [
-            const Icon(Icons.bolt, size: 18, color: kAcc),
+            Icon(Icons.bolt, size: 18, color: kAcc),
             const SizedBox(width: 8),
             Expanded(
               child: TextField(
