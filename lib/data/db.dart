@@ -10,6 +10,10 @@ class DB {
   static final DB i = DB._();
   static Database? _db;
 
+  /// 计划增删改后的回调，由 main 里挂到通知服务上。
+  /// 用回调而不是直接 import notify，是为了避免 db ↔ notify 互相 import。
+  static Future<void> Function(Task task, String op)? taskHook;
+
   Future<Database> _open() async {
     if (_db != null) return _db!;
     final dir = await getDatabasesPath();
@@ -220,6 +224,7 @@ class DB {
     } else {
       await db.update('task', t.toMap(), where: 'id=?', whereArgs: [t.id]);
     }
+    await taskHook?.call(t, 'save');
   }
 
   /// 勾选 / 取消勾选。重复计划会就地推进到下一次，而不是消失。
@@ -235,12 +240,15 @@ class DB {
   Future<void> deleteTask(int id) async {
     final db = await _open();
     await db.delete('task', where: 'id=?', whereArgs: [id]);
+    await taskHook?.call(Task(id: id, title: ''), 'delete');
   }
 
   /// 清理所有已完成的计划，返回删除条数
   Future<int> clearDoneTasks() async {
     final db = await _open();
-    return db.delete('task', where: 'done=1');
+    final n = await db.delete('task', where: 'done=1');
+    await taskHook?.call(Task(title: ''), 'clear');
+    return n;
   }
 
   // ── 设置 ──────────────────────────────────────────
@@ -315,5 +323,49 @@ class DB {
     await db.delete('lesson_override');
     await db.delete('task');
     await db.delete('setting');
+  }
+
+  // ── 备份 / 恢复 ───────────────────────────────────
+  /// 导出全部数据（给 Backup 用）。原样吐出表里的行，不做模型转换，
+  /// 这样以后加字段也不会因为 fromMap 忽略掉而丢数据。
+  Future<Map<String, dynamic>> dumpAll() async {
+    final db = await _open();
+    return {
+      'lessons': await db.query('lesson'),
+      'overrides': await db.query('lesson_override'),
+      'tasks': await db.query('task'),
+      'settings': await db.query('setting'),
+    };
+  }
+
+  /// 覆盖式写入（恢复备份）。整个过程放在一个事务里，
+  /// 中途出错就整体回滚，不会出现「清空了但没写进去」的空库。
+  Future<void> replaceAll({
+    required List<Map<String, Object?>> lessons,
+    required List<Map<String, Object?>> overrides,
+    required List<Map<String, Object?>> tasks,
+    required Map<String, String> settings,
+  }) async {
+    final db = await _open();
+    await db.transaction((txn) async {
+      await txn.delete('lesson');
+      await txn.delete('lesson_override');
+      await txn.delete('task');
+      await txn.delete('setting');
+      for (final m in lessons) {
+        await txn.insert('lesson', m, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      for (final m in overrides) {
+        await txn.insert('lesson_override', m,
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      for (final m in tasks) {
+        await txn.insert('task', m, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+      for (final e in settings.entries) {
+        await txn.insert('setting', {'key': e.key, 'value': e.value},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    });
   }
 }

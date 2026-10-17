@@ -1,9 +1,13 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../data/db.dart';
 import '../models.dart';
 import '../palette.dart';
 import '../responsive.dart';
+import '../services/backup.dart';
+import '../services/notify.dart';
 import '../theme.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -19,6 +23,19 @@ class _SettingsPageState extends State<SettingsPage> {
   int _current = 1;
   List<PeriodTime> _pt = kDefaultPeriodTimes;
 
+  /// 「每节课的时间」默认收起：一天最多改一次，没必要一直占屏幕
+  bool _ptOpen = false;
+
+  // 通知
+  bool _nEnabled = false;
+  int _nLead = 10;
+  bool _nSound = true;
+  bool _nVibrate = true;
+
+  // 备份
+  List<File> _backups = const [];
+  bool _busy = false;
+
   @override
   void initState() {
     super.initState();
@@ -30,13 +47,27 @@ class _SettingsPageState extends State<SettingsPage> {
     final t = await DB.i.totalWeeks();
     final c = await DB.i.currentWeek();
     final pt = await DB.i.periodTimes();
+    await Notify.i.load();
+    final backups = await Backup.listLocal();
     if (!mounted) return;
     setState(() {
       _start = s;
       _total = t;
       _current = c;
       _pt = pt;
+      _nEnabled = Notify.i.enabled;
+      _nLead = Notify.i.lead;
+      _nSound = Notify.i.sound;
+      _nVibrate = Notify.i.vibrate;
+      _backups = backups;
     });
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    final m = ScaffoldMessenger.maybeOf(context);
+    m?.clearSnackBars();
+    m?.showSnackBar(SnackBar(content: Text(msg)));
   }
 
   String _d(DateTime d) =>
@@ -245,28 +276,194 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
 
-        // ── 节次时间 ─────────────────────────
-        _H('每节课的时间'),
+        // ── 节次时间（默认折叠） ──────────────
+        _H('课表时间管理'),
         Card(
           child: Column(
             children: [
-              for (var i = 0; i < _pt.length; i++) ...[
-                ListTile(
-                  dense: true,
-                  leading: CircleAvatar(
-                    radius: 12,
-                    backgroundColor: kCard2,
-                    child: Text('${i + 1}',
-                        style: TextStyle(fontSize: 11, color: kDim)),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => setState(() => _ptOpen = !_ptOpen),
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16, 14, 12, 14),
+                  child: Row(
+                    children: [
+                      Icon(Icons.schedule, size: 20, color: kAcc),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('每节课的时间',
+                                style: TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w600)),
+                            SizedBox(height: 2),
+                            Text(
+                              _ptOpen
+                                  ? '点任意一节可修改起止时间'
+                                  : '共 ${_pt.length} 节 · 第 1 节 ${_pt.first.s} 开始',
+                              style:
+                                  TextStyle(fontSize: 11.5, color: kDim),
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: _ptOpen ? 0.5 : 0,
+                        duration: Duration(milliseconds: 180),
+                        child: Icon(Icons.expand_more,
+                            size: 20, color: kDim),
+                      ),
+                    ],
                   ),
-                  title: Text('第 ${i + 1} 节',
-                      style: TextStyle(fontSize: 14)),
-                  trailing: Text('${_pt[i].s} - ${_pt[i].e}',
-                      style: TextStyle(fontSize: 13, color: kAcc)),
-                  onTap: () => _editPeriod(i),
                 ),
-                if (i != _pt.length - 1) Divider(height: 1),
-              ],
+              ),
+              AnimatedCrossFade(
+                firstChild: SizedBox(width: double.infinity, height: 0),
+                secondChild: Column(
+                  children: [
+                    Divider(height: 1),
+                    for (var i = 0; i < _pt.length; i++) ...[
+                      ListTile(
+                        dense: true,
+                        visualDensity: VisualDensity.compact,
+                        leading: CircleAvatar(
+                          radius: 11,
+                          backgroundColor: kCard2,
+                          child: Text('${i + 1}',
+                              style:
+                                  TextStyle(fontSize: 10, color: kDim)),
+                        ),
+                        title: Text('第 ${i + 1} 节',
+                            style: TextStyle(fontSize: 13.5)),
+                        trailing: Text('${_pt[i].s} - ${_pt[i].e}',
+                            style:
+                                TextStyle(fontSize: 12.5, color: kAcc)),
+                        onTap: () => _editPeriod(i),
+                      ),
+                      if (i != _pt.length - 1) Divider(height: 1),
+                    ],
+                  ],
+                ),
+                crossFadeState: _ptOpen
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: Duration(milliseconds: 200),
+              ),
+            ],
+          ),
+        ),
+
+        // ── 提醒 ─────────────────────────────
+        _H('提醒'),
+        Card(
+          child: Column(
+            children: [
+              SwitchListTile(
+                secondary: Icon(Icons.notifications_active_outlined),
+                title: Text('计划提醒'),
+                subtitle: Text(_nEnabled
+                    ? '到点会推送通知（记得允许通知权限）'
+                    : '已关闭，计划不会提醒你'),
+                value: _nEnabled,
+                onChanged: (v) async {
+                  if (v) {
+                    final ok = await Notify.i.requestPermission();
+                    if (!ok && mounted) {
+                      _toast('没有通知权限，请到系统设置里允许「计划盒」发通知');
+                    }
+                  }
+                  await Notify.i.saveConfig(enabled: v);
+                  await Notify.i.resyncAll();
+                  await _load();
+                },
+              ),
+              Divider(height: 1),
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, 10, 16, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.alarm, size: 20,
+                            color: _nEnabled ? kAcc : kDim),
+                        SizedBox(width: 12),
+                        Text('提前多久提醒',
+                            style: TextStyle(
+                                fontSize: 14.5,
+                                color: _nEnabled ? kFg : kDim)),
+                        Spacer(),
+                        Text(_nLead == 0 ? '准点' : '$_nLead 分钟前',
+                            style: TextStyle(
+                                fontSize: 12.5,
+                                color: _nEnabled ? kAcc : kDim,
+                                fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final m in [0, 5, 10, 15, 30])
+                          ChoiceChip(
+                            label: Text(m == 0 ? '准点' : '$m 分'),
+                            selected: _nLead == m,
+                            onSelected: _nEnabled
+                                ? (_) async {
+                                    await Notify.i.saveConfig(lead: m);
+                                    await Notify.i.resyncAll();
+                                    await _load();
+                                  }
+                                : null,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1),
+              SwitchListTile(
+                secondary: Icon(Icons.volume_up_outlined),
+                title: Text('声音'),
+                subtitle: Text('提醒时播放提示音'),
+                value: _nSound,
+                onChanged: _nEnabled
+                    ? (v) async {
+                        await Notify.i.saveConfig(sound: v);
+                        await _load();
+                      }
+                    : null,
+              ),
+              Divider(height: 1),
+              SwitchListTile(
+                secondary: Icon(Icons.vibration),
+                title: Text('震动'),
+                subtitle: Text('提醒时让手机震一下'),
+                value: _nVibrate,
+                onChanged: _nEnabled
+                    ? (v) async {
+                        await Notify.i.saveConfig(vibrate: v);
+                        await _load();
+                      }
+                    : null,
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.send_outlined),
+                title: Text('发一条试试'),
+                subtitle: Text('验证通知、声音、震动是否都正常'),
+                trailing: Icon(Icons.chevron_right, size: 18, color: kDim),
+                enabled: _nEnabled,
+                onTap: _nEnabled
+                    ? () async {
+                        await Notify.i.showTest();
+                        _toast('已发送，请下拉通知栏看看');
+                      }
+                    : null,
+              ),
             ],
           ),
         ),
@@ -283,8 +480,62 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               Divider(height: 1),
               ListTile(
-                leading:
-                    Icon(Icons.delete_forever, color: kDanger),
+                leading: Icon(Icons.ios_share),
+                title: Text('导出备份'),
+                subtitle: Text('生成 JSON 并分享到网盘 / 微信 / 邮箱'),
+                enabled: !_busy,
+                onTap: _exportBackup,
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.file_open_outlined),
+                title: Text('从文件导入'),
+                subtitle: Text('选一个 .json 备份恢复，会覆盖现有数据'),
+                enabled: !_busy,
+                onTap: _importBackup,
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.save_outlined),
+                title: Text('在本机留一份'),
+                subtitle: Text('存到应用目录，重装前可以用文件管理器拷走'),
+                enabled: !_busy,
+                onTap: _saveLocalBackup,
+              ),
+              if (_backups.isNotEmpty) ...[
+                Divider(height: 1),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      Text('本机备份 ${_backups.length} 份',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: kDim,
+                              fontWeight: FontWeight.w600)),
+                      Spacer(),
+                      Text('点一下恢复',
+                          style: TextStyle(fontSize: 11, color: kFaint)),
+                    ],
+                  ),
+                ),
+                for (final f in _backups.take(8))
+                  ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    leading: Icon(Icons.description_outlined,
+                        size: 18, color: kDim),
+                    title: Text(_backupLabel(f),
+                        style: TextStyle(fontSize: 13)),
+                    trailing: Text('${_kb(f)} KB',
+                        style: TextStyle(fontSize: 11, color: kFaint)),
+                    onTap: () => _restoreFromLocal(f),
+                  ),
+                SizedBox(height: 6),
+              ],
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.delete_forever, color: kDanger),
                 title: Text('清空所有数据',
                     style: TextStyle(color: kDanger)),
                 subtitle: Text('课程、计划、设置全部删除，不可恢复'),
@@ -296,7 +547,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
         SizedBox(height: 20),
         Center(
-          child: Text('PlanBox v0.4.2 · 开源 GPL-3.0',
+          child: Text('PlanBox v0.5.0 · 开源 GPL-3.0',
               style: TextStyle(fontSize: 11, color: kFaint)),
         ),
         SizedBox(height: 6),
@@ -357,6 +608,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (ok != true) return;
     await DB.i.wipe();
+    await Notify.i.cancelAll();
     // 设置被清空，配色也回到默认
     Pal.accIdx = 0;
     Pal.subIdx = 0;
@@ -365,6 +617,112 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('已清空')));
+  }
+
+  // ── 备份 ──────────────────────────────────────────
+  String _backupLabel(File f) {
+    final name = f.path.split('/').last;
+    // planbox-backup-20261017-233012.json → 2026-10-17 23:30
+    final m = RegExp(r'(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})').firstMatch(name);
+    if (m == null) return name;
+    return '${m.group(1)}-${m.group(2)}-${m.group(3)} '
+        '${m.group(4)}:${m.group(5)}';
+  }
+
+  int _kb(File f) {
+    try {
+      return (f.lengthSync() / 1024).ceil();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> _exportBackup() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await Backup.exportAndShare();
+      await _load();
+      _toast('备份已生成，选个地方存下来就行');
+    } catch (e) {
+      _toast('导出失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveLocalBackup() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      final f = await Backup.writeLocal();
+      await _load();
+      _toast('已保存到 ${f.path}');
+    } catch (e) {
+      _toast('保存失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _importBackup() async {
+    if (_busy) return;
+    Map<String, dynamic>? data;
+    try {
+      data = await Backup.pickAndRead();
+    } catch (e) {
+      _toast('读不了这个文件：$e');
+      return;
+    }
+    if (data == null) return; // 用户取消
+    await _doRestore(
+      () => Backup.restore(data!),
+      what: '所选文件',
+    );
+  }
+
+  Future<void> _restoreFromLocal(File f) async {
+    await _doRestore(
+      () => Backup.restoreFromFile(f),
+      what: _backupLabel(f),
+    );
+  }
+
+  /// 恢复前的二次确认：这是破坏性操作，必须说清楚会覆盖什么
+  Future<void> _doRestore(Future<int> Function() run,
+      {required String what}) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('用「$what」覆盖现有数据？'),
+        content: Text('当前的课表、计划、设置都会被替换成备份里的内容，'
+            '这一步不能撤销。\n\n建议先「导出备份」留一份现在数据的副本。'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('取消')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: kDanger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('覆盖恢复'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    setState(() => _busy = true);
+    try {
+      final n = await run();
+      // 备份里带着配色设置，重读一次让它生效（load 内部会 rev++）
+      await Pal.load();
+      await _load();
+      _toast('恢复完成，共 $n 条计划');
+    } catch (e) {
+      _toast('恢复失败：$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 
