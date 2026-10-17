@@ -599,7 +599,7 @@ class _TodayPageState extends State<TodayPage> {
             child: Text(PeriodTime.hhmm(minute),
                 style: const TextStyle(fontSize: 11, color: kDim)),
           ),
-          const Icon(Icons.flag_outlined, size: 13, color: kAcc),
+          Icon(Icons.flag_outlined, size: 13, color: kAcc),
           const SizedBox(width: 6),
           Expanded(
             child: Padding(
