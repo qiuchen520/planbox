@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../data/db.dart';
 import '../models.dart';
+import '../palette.dart';
+import '../responsive.dart';
 import '../theme.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -42,7 +44,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
+    return ContentWidth(
+      child: ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
       children: [
         const Padding(
@@ -50,6 +53,85 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Text('我的',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
         ),
+
+        // ── 配色 ─────────────────────────────
+        const _H('配色'),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('主题色',
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        color: kDim,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (var i = 0; i < kAccentPresets.length; i++)
+                      _AccentDot(
+                        preset: kAccentPresets[i],
+                        selected: Pal.accIdx == i,
+                        onTap: () async {
+                          await Pal.setAccent(i);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                const Text('科目配色',
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        color: kDim,
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var i = 0; i < kSubjectPresets.length; i++)
+                      _SubPaletteChip(
+                        preset: kSubjectPresets[i],
+                        selected: Pal.subIdx == i,
+                        onTap: () async {
+                          await Pal.setSubjectPreset(i);
+                          if (mounted) setState(() {});
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                // 当前色板预览
+                Row(
+                  children: [
+                    for (final c in Pal.subjects) ...[
+                      Expanded(
+                        child: Container(
+                          height: 8,
+                          margin: const EdgeInsets.only(right: 3),
+                          decoration: BoxDecoration(
+                            color: c,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Text('切换科目配色会自动重算已有课程的颜色',
+                    style: TextStyle(fontSize: 11, color: kFaint)),
+              ],
+            ),
+          ),
+        ),
+
+        // ── 学期 ─────────────────────────────
         const _H('学期'),
         Card(
           child: Column(
@@ -134,6 +216,8 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
         ),
+
+        // ── 节次时间 ─────────────────────────
         const _H('每节课的时间'),
         Card(
           child: Column(
@@ -150,7 +234,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   title: Text('第 ${i + 1} 节',
                       style: const TextStyle(fontSize: 14)),
                   trailing: Text('${_pt[i].s} - ${_pt[i].e}',
-                      style: const TextStyle(fontSize: 13, color: kAcc)),
+                      style: TextStyle(fontSize: 13, color: kAcc)),
                   onTap: () => _editPeriod(i),
                 ),
                 if (i != _pt.length - 1) const Divider(height: 1),
@@ -158,6 +242,8 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
         ),
+
+        // ── 数据 ─────────────────────────────
         const _H('数据'),
         Card(
           child: Column(
@@ -179,9 +265,10 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
         ),
+
         const SizedBox(height: 20),
         const Center(
-          child: Text('PlanBox v0.3.0 · 开源 GPL-3.0',
+          child: Text('PlanBox v0.4.0 · 开源 GPL-3.0',
               style: TextStyle(fontSize: 11, color: Color(0xFF5C6474))),
         ),
         const SizedBox(height: 6),
@@ -190,6 +277,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontSize: 11, color: Color(0xFF5C6474))),
         ),
       ],
+      ),
     );
   }
 
@@ -203,6 +291,7 @@ class _SettingsPageState extends State<SettingsPage> {
     list[i] = PeriodTime(start, end);
     await DB.i.setPeriodTimes(list);
     await _load();
+    // 顺带把后面没改的节次整体平移？不做，保持可预期
   }
 
   Future<String?> _pickTime(String init) async {
@@ -240,6 +329,10 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (ok != true) return;
     await DB.i.wipe();
+    // 设置被清空，配色也回到默认
+    Pal.accIdx = 0;
+    Pal.subIdx = 0;
+    Pal.rev.value++;
     await _load();
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -258,4 +351,122 @@ class _H extends StatelessWidget {
             style: const TextStyle(
                 fontSize: 13, color: kDim, fontWeight: FontWeight.w600)),
       );
+}
+
+/// 主题色圆点
+class _AccentDot extends StatelessWidget {
+  final AccentPreset preset;
+  final bool selected;
+  final VoidCallback onTap;
+  const _AccentDot({
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [preset.glow, preset.color],
+              ),
+              border: Border.all(
+                color: selected ? Colors.white : Colors.transparent,
+                width: 2,
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                          color: preset.color.withValues(alpha: 0.5),
+                          blurRadius: 10)
+                    ]
+                  : null,
+            ),
+            child: selected
+                ? const Icon(Icons.check, size: 18, color: Colors.white)
+                : null,
+          ),
+          const SizedBox(height: 4),
+          Text(preset.name,
+              style: TextStyle(
+                  fontSize: 10,
+                  color: selected ? preset.color : kFaint)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 科目色板选择卡
+class _SubPaletteChip extends StatelessWidget {
+  final SubjectPreset preset;
+  final bool selected;
+  final VoidCallback onTap;
+  const _SubPaletteChip({
+    required this.preset,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? kAcc.withValues(alpha: 0.12) : kCard2,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? kAcc : kLine),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final c in preset.colors.take(8))
+                  Container(
+                    width: 9,
+                    height: 9,
+                    margin: const EdgeInsets.only(right: 2),
+                    decoration:
+                        BoxDecoration(color: c, shape: BoxShape.circle),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(preset.name,
+                    style: TextStyle(
+                        fontSize: 11.5,
+                        color: selected ? kAcc : kDim,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400)),
+                if (selected) ...[
+                  const SizedBox(width: 4),
+                  Icon(Icons.check_circle, size: 12, color: kAcc),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
