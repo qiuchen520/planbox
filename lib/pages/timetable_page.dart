@@ -645,48 +645,57 @@ class _TimetablePageState extends State<TimetablePage> {
     return Column(
       children: [
         _buildTopBar(),
-        _buildDayHeader(),
-        SizedBox(height: 2),
         Expanded(
           child: ContentWidth(
             maxWidth: BP.grid,
-            child: _loading
-                ? Center(child: CircularProgressIndicator())
-                : LayoutBuilder(builder: (ctx, cons) {
-                    // 行高只用来定字号，布局完全由 flex 决定，不会错位
-                    final h = cons.maxHeight / _periods;
-                    return Padding(
-                      padding: EdgeInsets.fromLTRB(6, 0, 8, 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(
-                            width: 22,
-                            child: Column(
+            child: Column(
+              children: [
+                // 表头与网格放进同一个水平约束里，7 列共享同一组列宽，
+                // 这样「周几」永远压在自己的那一列上。
+                _buildDayHeader(),
+                SizedBox(height: 2),
+                Expanded(
+                  child: _loading
+                      ? Center(child: CircularProgressIndicator())
+                      : LayoutBuilder(builder: (ctx, cons) {
+                          // 行高只用来定字号，布局完全由 flex 决定，不会错位
+                          final h = cons.maxHeight / _periods;
+                          return Padding(
+                            padding: EdgeInsets.fromLTRB(6, 0, 8, 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                for (var p = 1; p <= _periods; p++)
+                                SizedBox(
+                                  width: 22,
+                                  child: Column(
+                                    children: [
+                                      for (var p = 1; p <= _periods; p++)
+                                        Expanded(
+                                          child: Center(
+                                            child: Text('$p',
+                                                style: TextStyle(
+                                                    fontSize: 10,
+                                                    color: kDim)),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                for (var wd = 1; wd <= 7; wd++)
                                   Expanded(
-                                    child: Center(
-                                      child: Text('$p',
-                                          style: TextStyle(
-                                              fontSize: 10, color: kDim)),
+                                    child: Padding(
+                                      padding: EdgeInsets.symmetric(
+                                          horizontal: 1.5),
+                                      child: _dayColumn(wd, h),
                                     ),
                                   ),
                               ],
                             ),
-                          ),
-                          for (var wd = 1; wd <= 7; wd++)
-                            Expanded(
-                              child: Padding(
-                                padding:
-                                    EdgeInsets.symmetric(horizontal: 1.5),
-                                child: _dayColumn(wd, h),
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  }),
+                          );
+                        }),
+                ),
+              ],
+            ),
           ),
         ),
         if (_selectMode) _buildSelBar(),

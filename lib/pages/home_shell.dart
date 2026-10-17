@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../responsive.dart';
 import '../theme.dart';
+import 'calendar_page.dart';
 import 'settings_page.dart';
 import 'tasks_page.dart';
 import 'today_page.dart';
@@ -20,6 +21,7 @@ class _HomeShellState extends State<HomeShell> {
   static List<_Dest> _dests = [
     _Dest('今日', Icons.wb_sunny_outlined, Icons.wb_sunny),
     _Dest('课表', Icons.calendar_month_outlined, Icons.calendar_month),
+    _Dest('日历', Icons.grid_view_outlined, Icons.grid_view),
     _Dest('计划', Icons.checklist_outlined, Icons.checklist),
     _Dest('我的', Icons.person_outline, Icons.person),
   ];
@@ -27,7 +29,8 @@ class _HomeShellState extends State<HomeShell> {
   Widget _page(int i) => switch (i) {
         0 => TodayPage(key: PageStorageKey('today')),
         1 => TimetablePage(key: PageStorageKey('timetable')),
-        2 => TasksPage(key: PageStorageKey('tasks')),
+        2 => CalendarPage(key: PageStorageKey('calendar')),
+        3 => TasksPage(key: PageStorageKey('tasks')),
         _ => SettingsPage(key: PageStorageKey('settings')),
       };
 

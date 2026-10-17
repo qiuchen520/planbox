@@ -303,6 +303,43 @@ class Task {
     }
   }
 
+  /// 这条计划在 [day] 那天是否需要处理（日历视图用）。
+  ///
+  /// 覆盖三种情况：开始日 / 截止日 / 重复日展开。
+  bool occursOn(DateTime day) {
+    final target = DateTime(day.year, day.month, day.day);
+    var hit = false;
+    if (startAt != null) {
+      final s = DateTime.fromMillisecondsSinceEpoch(startAt!);
+      final sd = DateTime(s.year, s.month, s.day);
+      if (!target.isBefore(sd)) {
+        if (!isRepeating) {
+          hit = sd == target;
+        } else if (repeatUntil == null ||
+            target.millisecondsSinceEpoch <= repeatUntil! + 86399999) {
+          switch (repeatKind) {
+            case 1:
+              hit = true;
+              break;
+            case 2:
+              hit = target.weekday <= 5;
+              break;
+            case 3:
+              final mask =
+                  repeatDays == 0 ? (1 << (s.weekday - 1)) : repeatDays;
+              hit = (mask & (1 << (target.weekday - 1))) != 0;
+              break;
+          }
+        }
+      }
+    }
+    if (!hit && dueAt != null) {
+      final d = DateTime.fromMillisecondsSinceEpoch(dueAt!);
+      hit = DateTime(d.year, d.month, d.day) == target;
+    }
+    return hit;
+  }
+
   /// 打完卡后推进到下一次；返回 true 表示这一条彻底结束了
   bool advanceAfterDone({DateTime? now}) {
     final n = now ?? DateTime.now();
