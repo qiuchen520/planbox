@@ -14,7 +14,7 @@ class BP {
 class ContentWidth extends StatelessWidget {
   final Widget child;
   final double maxWidth;
-  const ContentWidth({
+  ContentWidth({
     super.key,
     required this.child,
     this.maxWidth = BP.reading,

@@ -28,14 +28,14 @@ class _Block {
 }
 
 class TimetablePage extends StatefulWidget {
-  const TimetablePage({super.key});
+  TimetablePage({super.key});
 
   @override
   State<TimetablePage> createState() => _TimetablePageState();
 }
 
 class _TimetablePageState extends State<TimetablePage> {
-  static const List<String> _days = ['一', '二', '三', '四', '五', '六', '日'];
+  static List<String> _days = ['一', '二', '三', '四', '五', '六', '日'];
   static const int _periods = 12;
 
   int _viewWeek = 1;
@@ -213,7 +213,7 @@ class _TimetablePageState extends State<TimetablePage> {
     m?.clearSnackBars();
     m?.showSnackBar(SnackBar(
       content: Text(msg),
-      duration: const Duration(milliseconds: 1600),
+      duration: Duration(milliseconds: 1600),
     ));
   }
 
@@ -245,23 +245,23 @@ class _TimetablePageState extends State<TimetablePage> {
                   TextField(
                     controller: subj,
                     autofocus: true,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                         labelText: '科目', hintText: '语文 / 数学 / 英语'),
                   ),
-                  const SizedBox(height: 10),
+                  SizedBox(height: 10),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
                     children: [
                       for (final s in kSubjects)
                         ActionChip(
-                          label: Text(s, style: const TextStyle(fontSize: 12)),
+                          label: Text(s, style: TextStyle(fontSize: 12)),
                           visualDensity: VisualDensity.compact,
                           onPressed: () => setDlg(() => subj.text = s),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  SizedBox(height: 14),
                   Row(
                     children: [
                       Expanded(
@@ -276,7 +276,7 @@ class _TimetablePageState extends State<TimetablePage> {
                           }),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      SizedBox(width: 10),
                       Expanded(
                         child: _numDd(
                           label: '结束周',
@@ -291,9 +291,9 @@ class _TimetablePageState extends State<TimetablePage> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   SegmentedButton<int>(
-                    segments: const [
+                    segments: [
                       ButtonSegment(value: 0, label: Text('全周')),
                       ButtonSegment(value: 1, label: Text('单周')),
                       ButtonSegment(value: 2, label: Text('双周')),
@@ -302,13 +302,13 @@ class _TimetablePageState extends State<TimetablePage> {
                     showSelectedIcon: false,
                     onSelectionChanged: (s) => setDlg(() => wt = s.first),
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   TextField(
                     controller: room,
-                    decoration: const InputDecoration(labelText: '地点（可空）'),
+                    decoration: InputDecoration(labelText: '地点（可空）'),
                   ),
-                  const SizedBox(height: 8),
-                  const Text('选中的格子若已有课会被覆盖',
+                  SizedBox(height: 8),
+                  Text('选中的格子若已有课会被覆盖',
                       style: TextStyle(fontSize: 11, color: kDim)),
                 ],
               ),
@@ -317,10 +317,10 @@ class _TimetablePageState extends State<TimetablePage> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消')),
+                child: Text('取消')),
             FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('铺上去')),
+                child: Text('铺上去')),
           ],
         ),
       ),
@@ -406,26 +406,26 @@ class _TimetablePageState extends State<TimetablePage> {
                     controller: subj,
                     autofocus: isNew,
                     textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                         labelText: '科目', hintText: '语文 / 数学 / 英语'),
                   ),
-                  const SizedBox(height: 10),
+                  SizedBox(height: 10),
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
                     children: [
                       for (final s in kSubjects)
                         ActionChip(
-                          label: Text(s, style: const TextStyle(fontSize: 12)),
+                          label: Text(s, style: TextStyle(fontSize: 12)),
                           visualDensity: VisualDensity.compact,
                           onPressed: () => setDlg(() => subj.text = s),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 14),
-                  const Text('上几节（连堂直接选 2 节以上）',
+                  SizedBox(height: 14),
+                  Text('上几节（连堂直接选 2 节以上）',
                       style: TextStyle(fontSize: 12, color: kDim)),
-                  const SizedBox(height: 8),
+                  SizedBox(height: 8),
                   SegmentedButton<int>(
                     segments: [
                       for (var i = 1; i <= segMax; i++)
@@ -436,11 +436,11 @@ class _TimetablePageState extends State<TimetablePage> {
                     showSelectedIcon: false,
                     onSelectionChanged: (s) => setDlg(() => span = s.first),
                   ),
-                  const SizedBox(height: 6),
+                  SizedBox(height: 6),
                   ExpansionTile(
                     tilePadding: EdgeInsets.zero,
                     childrenPadding: EdgeInsets.zero,
-                    title: const Text('更多设置',
+                    title: Text('更多设置',
                         style: TextStyle(fontSize: 13, color: kDim)),
                     children: [
                       Row(
@@ -449,20 +449,20 @@ class _TimetablePageState extends State<TimetablePage> {
                             child: TextField(
                               controller: room,
                               decoration:
-                                  const InputDecoration(labelText: '地点'),
+                                  InputDecoration(labelText: '地点'),
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10),
                           Expanded(
                             child: TextField(
                               controller: teacher,
                               decoration:
-                                  const InputDecoration(labelText: '教师'),
+                                  InputDecoration(labelText: '教师'),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
@@ -477,7 +477,7 @@ class _TimetablePageState extends State<TimetablePage> {
                               }),
                             ),
                           ),
-                          const SizedBox(width: 10),
+                          SizedBox(width: 10),
                           Expanded(
                             child: _numDd(
                               label: '结束周',
@@ -492,9 +492,9 @@ class _TimetablePageState extends State<TimetablePage> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: 12),
                       SegmentedButton<int>(
-                        segments: const [
+                        segments: [
                           ButtonSegment(value: 0, label: Text('全周')),
                           ButtonSegment(value: 1, label: Text('单周')),
                           ButtonSegment(value: 2, label: Text('双周')),
@@ -504,15 +504,15 @@ class _TimetablePageState extends State<TimetablePage> {
                         onSelectionChanged: (s) => setDlg(() => wt = s.first),
                       ),
                       if (!isNew) ...[
-                        const Divider(height: 20),
+                        Divider(height: 20),
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           dense: true,
                           value: onlyThisWeek,
                           onChanged: (v) => setDlg(() => onlyThisWeek = v),
                           title: Text('仅修改第 $_viewWeek 周',
-                              style: const TextStyle(fontSize: 14)),
-                          subtitle: const Text('临时调课，不影响其它周',
+                              style: TextStyle(fontSize: 14)),
+                          subtitle: Text('临时调课，不影响其它周',
                               style: TextStyle(fontSize: 11, color: kDim)),
                         ),
                         if (onlyThisWeek)
@@ -522,7 +522,7 @@ class _TimetablePageState extends State<TimetablePage> {
                             value: cancelledThisWeek,
                             onChanged: (v) =>
                                 setDlg(() => cancelledThisWeek = v),
-                            title: const Text('本周不上',
+                            title: Text('本周不上',
                                 style: TextStyle(fontSize: 14)),
                           ),
                       ],
@@ -536,11 +536,11 @@ class _TimetablePageState extends State<TimetablePage> {
             if (!isNew)
               TextButton(
                 onPressed: () => Navigator.pop(ctx, 'delete'),
-                child: const Text('删除',
-                    style: TextStyle(color: Color(0xFFFF5D6C))),
+                child: Text('删除',
+                    style: TextStyle(color: kDanger)),
               ),
             TextButton(
-                onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                onPressed: () => Navigator.pop(ctx), child: Text('取消')),
             FilledButton(
                 onPressed: () => Navigator.pop(ctx, 'save'),
                 child: Text(isNew ? '添加' : '保存')),
@@ -617,7 +617,7 @@ class _TimetablePageState extends State<TimetablePage> {
         decoration: InputDecoration(
           labelText: label,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<int>(
@@ -629,7 +629,7 @@ class _TimetablePageState extends State<TimetablePage> {
                 DropdownMenuItem(
                     value: i,
                     child: Text('$i $suffix',
-                        style: const TextStyle(fontSize: 13))),
+                        style: TextStyle(fontSize: 13))),
             ],
             onChanged: (v) {
               if (v != null) onChanged(v);
@@ -646,17 +646,17 @@ class _TimetablePageState extends State<TimetablePage> {
       children: [
         _buildTopBar(),
         _buildDayHeader(),
-        const SizedBox(height: 2),
+        SizedBox(height: 2),
         Expanded(
           child: ContentWidth(
             maxWidth: BP.grid,
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(child: CircularProgressIndicator())
                 : LayoutBuilder(builder: (ctx, cons) {
                     // 行高只用来定字号，布局完全由 flex 决定，不会错位
                     final h = cons.maxHeight / _periods;
                     return Padding(
-                      padding: const EdgeInsets.fromLTRB(6, 0, 8, 6),
+                      padding: EdgeInsets.fromLTRB(6, 0, 8, 6),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -668,7 +668,7 @@ class _TimetablePageState extends State<TimetablePage> {
                                   Expanded(
                                     child: Center(
                                       child: Text('$p',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                               fontSize: 10, color: kDim)),
                                     ),
                                   ),
@@ -679,7 +679,7 @@ class _TimetablePageState extends State<TimetablePage> {
                             Expanded(
                               child: Padding(
                                 padding:
-                                    const EdgeInsets.symmetric(horizontal: 1.5),
+                                    EdgeInsets.symmetric(horizontal: 1.5),
                                 child: _dayColumn(wd, h),
                               ),
                             ),
@@ -721,7 +721,7 @@ class _TimetablePageState extends State<TimetablePage> {
     return Expanded(
       flex: 1,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1),
+        padding: EdgeInsets.symmetric(vertical: 1),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
@@ -768,7 +768,7 @@ class _TimetablePageState extends State<TimetablePage> {
     return Expanded(
       flex: b.span,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 1),
+        padding: EdgeInsets.symmetric(vertical: 1),
         child: _blockWidget(wd, b, h, selCount > 0, full),
       ),
     );
@@ -817,7 +817,7 @@ class _TimetablePageState extends State<TimetablePage> {
               width: selected ? 1.8 : (v.modified ? 1.6 : 1),
             ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+          padding: EdgeInsets.symmetric(horizontal: 3, vertical: 3),
           child: Stack(
             children: [
               Align(
@@ -866,7 +866,7 @@ class _TimetablePageState extends State<TimetablePage> {
 
   Widget _buildSelBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 6, 10, 10),
+      padding: EdgeInsets.fromLTRB(14, 6, 10, 10),
       decoration: BoxDecoration(
         color: kCard2,
         border: Border(top: BorderSide(color: kLine)),
@@ -876,29 +876,29 @@ class _TimetablePageState extends State<TimetablePage> {
         child: Row(
           children: [
             Icon(Icons.checklist_rounded, size: 18, color: kAcc),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Text('已选 ${_sel.length} 格',
-                style: const TextStyle(
+                style: TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w600)),
-            const SizedBox(width: 10),
-            const Text('点格子加/减',
+            SizedBox(width: 10),
+            Text('点格子加/减',
                 style: TextStyle(fontSize: 11, color: kDim)),
-            const Spacer(),
+            Spacer(),
             TextButton(
               onPressed:
                   _sel.isEmpty ? null : () => setState(() => _sel.clear()),
-              child: const Text('清空', style: TextStyle(fontSize: 12)),
+              child: Text('清空', style: TextStyle(fontSize: 12)),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: 6),
             TextButton(
               onPressed: _exitSel,
-              child: const Text('退出', style: TextStyle(fontSize: 12)),
+              child: Text('退出', style: TextStyle(fontSize: 12)),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: 6),
             FilledButton.icon(
               onPressed: _batchAdd,
-              icon: const Icon(Icons.playlist_add_check, size: 17),
-              label: const Text('批量加课',
+              icon: Icon(Icons.playlist_add_check, size: 17),
+              label: Text('批量加课',
                   style:
                       TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
             ),
@@ -911,22 +911,22 @@ class _TimetablePageState extends State<TimetablePage> {
   Widget _buildTopBar() {
     final isCurrent = _viewWeek == _currentWeek;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 6, 8, 2),
+      padding: EdgeInsets.fromLTRB(14, 6, 8, 2),
       child: Row(
         children: [
-          const Text('课表',
+          Text('课表',
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 10),
+          SizedBox(width: 10),
           IconButton(
             visualDensity: VisualDensity.compact,
             tooltip: '上一周',
             onPressed: () => _moveWeek(-1),
-            icon: const Icon(Icons.chevron_left, size: 20),
+            icon: Icon(Icons.chevron_left, size: 20),
           ),
           GestureDetector(
             onTap: _jumpWeek,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+              padding: EdgeInsets.symmetric(horizontal: 11, vertical: 4),
               decoration: BoxDecoration(
                 color: kAcc.withValues(alpha: isCurrent ? 0.18 : 0.10),
                 borderRadius: BorderRadius.circular(20),
@@ -944,14 +944,14 @@ class _TimetablePageState extends State<TimetablePage> {
             visualDensity: VisualDensity.compact,
             tooltip: '下一周',
             onPressed: () => _moveWeek(1),
-            icon: const Icon(Icons.chevron_right, size: 20),
+            icon: Icon(Icons.chevron_right, size: 20),
           ),
           if (!isCurrent)
             TextButton(
               onPressed: () => setState(() => _viewWeek = _currentWeek),
-              child: const Text('本周', style: TextStyle(fontSize: 12)),
+              child: Text('本周', style: TextStyle(fontSize: 12)),
             ),
-          const Spacer(),
+          Spacer(),
           TextButton.icon(
             onPressed: () {
               if (_selectMode) {
@@ -963,7 +963,7 @@ class _TimetablePageState extends State<TimetablePage> {
             icon: Icon(_selectMode ? Icons.close : Icons.checklist_rounded,
                 size: 17),
             label: Text(_selectMode ? '退出多选' : '批量',
-                style: const TextStyle(fontSize: 12)),
+                style: TextStyle(fontSize: 12)),
             style: TextButton.styleFrom(
               foregroundColor: _selectMode ? kDanger : kAcc,
             ),
@@ -972,7 +972,7 @@ class _TimetablePageState extends State<TimetablePage> {
             visualDensity: VisualDensity.compact,
             tooltip: '使用提示',
             onPressed: _showHelp,
-            icon: const Icon(Icons.help_outline, size: 19),
+            icon: Icon(Icons.help_outline, size: 19),
           ),
         ],
       ),
@@ -984,7 +984,7 @@ class _TimetablePageState extends State<TimetablePage> {
     final v = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('跳到第几周'),
+        title: Text('跳到第几周'),
         content: TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
@@ -995,13 +995,13 @@ class _TimetablePageState extends State<TimetablePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, _currentWeek),
-            child: const Text('回本周'),
+            child: Text('回本周'),
           ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+              onPressed: () => Navigator.pop(ctx), child: Text('取消')),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, int.tryParse(ctrl.text.trim())),
-            child: const Text('确定'),
+            child: Text('确定'),
           ),
         ],
       ),
@@ -1015,8 +1015,8 @@ class _TimetablePageState extends State<TimetablePage> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('课表怎么用'),
-        content: const Text(
+        title: Text('课表怎么用'),
+        content: Text(
           '· 点空格子直接加课，选「上几节」就能一次铺满连堂\n'
           '· 相邻的同一门课会自动黏成一块，点一下改整块\n'
           '· 长按任意格子进入多选，再点别的格子加/减，\n'
@@ -1029,7 +1029,7 @@ class _TimetablePageState extends State<TimetablePage> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('知道了')),
+              onPressed: () => Navigator.pop(ctx), child: Text('知道了')),
         ],
       ),
     );
@@ -1037,16 +1037,16 @@ class _TimetablePageState extends State<TimetablePage> {
 
   Widget _buildDayHeader() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 2, 8, 2),
+      padding: EdgeInsets.fromLTRB(6, 2, 8, 2),
       child: Row(
         children: [
-          const SizedBox(width: 22),
+          SizedBox(width: 22),
           for (var i = 1; i <= 7; i++)
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                padding: EdgeInsets.symmetric(horizontal: 1.5),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  padding: EdgeInsets.symmetric(vertical: 4),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: i == _todayWd

@@ -7,7 +7,7 @@ import '../responsive.dart';
 import '../theme.dart';
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({super.key});
+  SettingsPage({super.key});
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
@@ -46,9 +46,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     return ContentWidth(
       child: ListView(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+      padding: EdgeInsets.fromLTRB(20, 10, 20, 28),
       children: [
-        const Padding(
+        Padding(
           padding: EdgeInsets.only(bottom: 12),
           child: Text('我的',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
@@ -58,16 +58,44 @@ class _SettingsPageState extends State<SettingsPage> {
         const _H('配色'),
         Card(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+            padding: EdgeInsets.fromLTRB(14, 14, 14, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('主题色',
+                Text('外观',
                     style: TextStyle(
                         fontSize: 12.5,
                         color: kDim,
                         fontWeight: FontWeight.w600)),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<bool>(
+                    segments: [
+                      ButtonSegment(
+                          value: true,
+                          label: Text('深色'),
+                          icon: Icon(Icons.dark_mode_outlined, size: 16)),
+                      ButtonSegment(
+                          value: false,
+                          label: Text('浅色'),
+                          icon: Icon(Icons.light_mode_outlined, size: 16)),
+                    ],
+                    selected: {Pal.dark},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) async {
+                      await Pal.setDark(s.first);
+                      if (mounted) setState(() {});
+                    },
+                  ),
+                ),
+                SizedBox(height: 20),
+                Text('主题色',
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        color: kDim,
+                        fontWeight: FontWeight.w600)),
+                SizedBox(height: 10),
                 Wrap(
                   spacing: 12,
                   runSpacing: 12,
@@ -83,13 +111,13 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                const Text('科目配色',
+                SizedBox(height: 20),
+                Text('科目配色',
                     style: TextStyle(
                         fontSize: 12.5,
                         color: kDim,
                         fontWeight: FontWeight.w600)),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -105,7 +133,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                SizedBox(height: 14),
                 // 当前色板预览
                 Row(
                   children: [
@@ -113,7 +141,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       Expanded(
                         child: Container(
                           height: 8,
-                          margin: const EdgeInsets.only(right: 3),
+                          margin: EdgeInsets.only(right: 3),
                           decoration: BoxDecoration(
                             color: c,
                             borderRadius: BorderRadius.circular(4),
@@ -123,8 +151,8 @@ class _SettingsPageState extends State<SettingsPage> {
                     ],
                   ],
                 ),
-                const SizedBox(height: 10),
-                const Text('切换科目配色会自动重算已有课程的颜色',
+                SizedBox(height: 10),
+                Text('切换科目配色会自动重算已有课程的颜色',
                     style: TextStyle(fontSize: 11, color: kFaint)),
               ],
             ),
@@ -137,12 +165,12 @@ class _SettingsPageState extends State<SettingsPage> {
           child: Column(
             children: [
               ListTile(
-                leading: const Icon(Icons.school_outlined),
-                title: const Text('开学日期'),
+                leading: Icon(Icons.school_outlined),
+                title: Text('开学日期'),
                 subtitle: Text(_start == null
                     ? '未设置 · 周次需手动指定'
                     : '${_d(_start!)}（第 1 周周一）'),
-                trailing: const Icon(Icons.chevron_right, size: 18, color: kDim),
+                trailing: Icon(Icons.chevron_right, size: 18, color: kDim),
                 onTap: () async {
                   final d = await showDatePicker(
                     context: context,
@@ -155,10 +183,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   await _load();
                 },
               ),
-              const Divider(height: 1),
+              Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.calendar_month_outlined),
-                title: const Text('总周数'),
+                leading: Icon(Icons.calendar_month_outlined),
+                title: Text('总周数'),
                 subtitle: Text('$_total 周'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -169,7 +197,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         await DB.i.setTotalWeeks(_total - 1);
                         await _load();
                       },
-                      icon: const Icon(Icons.remove_circle_outline),
+                      icon: Icon(Icons.remove_circle_outline),
                     ),
                     IconButton(
                       onPressed: () async {
@@ -177,15 +205,15 @@ class _SettingsPageState extends State<SettingsPage> {
                         await DB.i.setTotalWeeks(_total + 1);
                         await _load();
                       },
-                      icon: const Icon(Icons.add_circle_outline),
+                      icon: Icon(Icons.add_circle_outline),
                     ),
                   ],
                 ),
               ),
-              const Divider(height: 1),
+              Divider(height: 1),
               ListTile(
-                leading: const Icon(Icons.today_outlined),
-                title: const Text('当前周次'),
+                leading: Icon(Icons.today_outlined),
+                title: Text('当前周次'),
                 subtitle: Text(
                     '第 $_current 周 · ${_current.isOdd ? "单周" : "双周"}'
                     '${_start == null ? "（手动）" : "（自动计算）"}'),
@@ -199,7 +227,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               await DB.i.setWeekNo(_current - 1);
                               await _load();
                             },
-                            icon: const Icon(Icons.remove_circle_outline),
+                            icon: Icon(Icons.remove_circle_outline),
                           ),
                           IconButton(
                             onPressed: () async {
@@ -207,7 +235,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               await DB.i.setWeekNo(_current + 1);
                               await _load();
                             },
-                            icon: const Icon(Icons.add_circle_outline),
+                            icon: Icon(Icons.add_circle_outline),
                           ),
                         ],
                       )
@@ -229,15 +257,15 @@ class _SettingsPageState extends State<SettingsPage> {
                     radius: 12,
                     backgroundColor: kCard2,
                     child: Text('${i + 1}',
-                        style: const TextStyle(fontSize: 11, color: kDim)),
+                        style: TextStyle(fontSize: 11, color: kDim)),
                   ),
                   title: Text('第 ${i + 1} 节',
-                      style: const TextStyle(fontSize: 14)),
+                      style: TextStyle(fontSize: 14)),
                   trailing: Text('${_pt[i].s} - ${_pt[i].e}',
                       style: TextStyle(fontSize: 13, color: kAcc)),
                   onTap: () => _editPeriod(i),
                 ),
-                if (i != _pt.length - 1) const Divider(height: 1),
+                if (i != _pt.length - 1) Divider(height: 1),
               ],
             ],
           ),
@@ -248,33 +276,33 @@ class _SettingsPageState extends State<SettingsPage> {
         Card(
           child: Column(
             children: [
-              const ListTile(
+              ListTile(
                 leading: Icon(Icons.storage_outlined),
                 title: Text('存储方式'),
                 subtitle: Text('本地 SQLite，不上传、不联网'),
               ),
-              const Divider(height: 1),
+              Divider(height: 1),
               ListTile(
                 leading:
-                    const Icon(Icons.delete_forever, color: Color(0xFFFF5D6C)),
-                title: const Text('清空所有数据',
-                    style: TextStyle(color: Color(0xFFFF5D6C))),
-                subtitle: const Text('课程、计划、设置全部删除，不可恢复'),
+                    Icon(Icons.delete_forever, color: kDanger),
+                title: Text('清空所有数据',
+                    style: TextStyle(color: kDanger)),
+                subtitle: Text('课程、计划、设置全部删除，不可恢复'),
                 onTap: _wipe,
               ),
             ],
           ),
         ),
 
-        const SizedBox(height: 20),
-        const Center(
-          child: Text('PlanBox v0.4.0 · 开源 GPL-3.0',
-              style: TextStyle(fontSize: 11, color: Color(0xFF5C6474))),
+        SizedBox(height: 20),
+        Center(
+          child: Text('PlanBox v0.4.2 · 开源 GPL-3.0',
+              style: TextStyle(fontSize: 11, color: kFaint)),
         ),
-        const SizedBox(height: 6),
-        const Center(
+        SizedBox(height: 6),
+        Center(
           child: Text('数据全在本机 · 不联网 · 不收集任何信息',
-              style: TextStyle(fontSize: 11, color: Color(0xFF5C6474))),
+              style: TextStyle(fontSize: 11, color: kFaint)),
         ),
       ],
       ),
@@ -312,17 +340,17 @@ class _SettingsPageState extends State<SettingsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确定清空？'),
-        content: const Text('课表、临时调课、计划、学期设置都会被删除，且无法恢复。'),
+        title: Text('确定清空？'),
+        content: Text('课表、临时调课、计划、学期设置都会被删除，且无法恢复。'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+              child: Text('取消')),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFFF5D6C)),
+                backgroundColor: kDanger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清空'),
+            child: Text('清空'),
           ),
         ],
       ),
@@ -336,7 +364,7 @@ class _SettingsPageState extends State<SettingsPage> {
     await _load();
     if (!mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已清空')));
+        .showSnackBar(SnackBar(content: Text('已清空')));
   }
 }
 
@@ -346,9 +374,9 @@ class _H extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(left: 4, bottom: 8, top: 6),
+        padding: EdgeInsets.only(left: 4, bottom: 8, top: 6),
         child: Text(text,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 13, color: kDim, fontWeight: FontWeight.w600)),
       );
 }
@@ -372,7 +400,7 @@ class _AccentDot extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
+            duration: Duration(milliseconds: 140),
             width: 38,
             height: 38,
             decoration: BoxDecoration(
@@ -395,10 +423,10 @@ class _AccentDot extends StatelessWidget {
                   : null,
             ),
             child: selected
-                ? const Icon(Icons.check, size: 18, color: Colors.white)
+                ? Icon(Icons.check, size: 18, color: Colors.white)
                 : null,
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: 4),
           Text(preset.name,
               style: TextStyle(
                   fontSize: 10,
@@ -425,8 +453,8 @@ class _SubPaletteChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        duration: Duration(milliseconds: 140),
+        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: selected ? kAcc.withValues(alpha: 0.12) : kCard2,
           borderRadius: BorderRadius.circular(12),
@@ -442,13 +470,13 @@ class _SubPaletteChip extends StatelessWidget {
                   Container(
                     width: 9,
                     height: 9,
-                    margin: const EdgeInsets.only(right: 2),
+                    margin: EdgeInsets.only(right: 2),
                     decoration:
                         BoxDecoration(color: c, shape: BoxShape.circle),
                   ),
               ],
             ),
-            const SizedBox(height: 5),
+            SizedBox(height: 5),
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -459,7 +487,7 @@ class _SubPaletteChip extends StatelessWidget {
                         fontWeight:
                             selected ? FontWeight.w600 : FontWeight.w400)),
                 if (selected) ...[
-                  const SizedBox(width: 4),
+                  SizedBox(width: 4),
                   Icon(Icons.check_circle, size: 12, color: kAcc),
                 ],
               ],

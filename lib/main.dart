@@ -8,11 +8,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // 先读回用户选的配色，避免启动瞬间闪一下默认色
   await Pal.load();
-  runApp(const PlanBoxApp());
+  runApp(PlanBoxApp());
 }
 
 class PlanBoxApp extends StatelessWidget {
-  const PlanBoxApp({super.key});
+  PlanBoxApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +23,7 @@ class PlanBoxApp extends StatelessWidget {
         title: 'PlanBox',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
-        home: const HomeShell(),
+        home: HomeShell(),
       ),
     );
   }

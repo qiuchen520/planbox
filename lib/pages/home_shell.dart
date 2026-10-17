@@ -8,7 +8,7 @@ import 'today_page.dart';
 import 'timetable_page.dart';
 
 class HomeShell extends StatefulWidget {
-  const HomeShell({super.key});
+  HomeShell({super.key});
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -17,7 +17,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  static const List<_Dest> _dests = [
+  static List<_Dest> _dests = [
     _Dest('今日', Icons.wb_sunny_outlined, Icons.wb_sunny),
     _Dest('课表', Icons.calendar_month_outlined, Icons.calendar_month),
     _Dest('计划', Icons.checklist_outlined, Icons.checklist),
@@ -25,10 +25,10 @@ class _HomeShellState extends State<HomeShell> {
   ];
 
   Widget _page(int i) => switch (i) {
-        0 => const TodayPage(key: PageStorageKey('today')),
-        1 => const TimetablePage(key: PageStorageKey('timetable')),
-        2 => const TasksPage(key: PageStorageKey('tasks')),
-        _ => const SettingsPage(key: PageStorageKey('settings')),
+        0 => TodayPage(key: PageStorageKey('today')),
+        1 => TimetablePage(key: PageStorageKey('timetable')),
+        2 => TasksPage(key: PageStorageKey('tasks')),
+        _ => SettingsPage(key: PageStorageKey('settings')),
       };
 
   @override
@@ -49,13 +49,13 @@ class _HomeShellState extends State<HomeShell> {
                 backgroundColor: kCard,
                 indicatorColor: kAcc.withValues(alpha: 0.20),
                 selectedIconTheme: IconThemeData(color: kAcc, size: 24),
-                unselectedIconTheme: const IconThemeData(color: kDim, size: 22),
+                unselectedIconTheme: IconThemeData(color: kDim, size: 22),
                 selectedLabelTextStyle: TextStyle(
                     color: kAcc, fontSize: 12, fontWeight: FontWeight.w600),
                 unselectedLabelTextStyle:
-                    const TextStyle(color: kDim, fontSize: 12),
+                    TextStyle(color: kDim, fontSize: 12),
                 leading: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: EdgeInsets.symmetric(vertical: 12),
                   child: Icon(Icons.check_box_outlined,
                       color: kAcc, size: 26),
                 ),
@@ -68,7 +68,7 @@ class _HomeShellState extends State<HomeShell> {
                     ),
                 ],
               ),
-              const VerticalDivider(width: 1, thickness: 1, color: kLine),
+              VerticalDivider(width: 1, thickness: 1, color: kLine),
               Expanded(child: body),
             ],
           ),

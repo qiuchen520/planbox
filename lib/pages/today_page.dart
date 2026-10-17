@@ -24,14 +24,14 @@ class _Tl {
 }
 
 class TodayPage extends StatefulWidget {
-  const TodayPage({super.key});
+  TodayPage({super.key});
 
   @override
   State<TodayPage> createState() => _TodayPageState();
 }
 
 class _TodayPageState extends State<TodayPage> {
-  static const List<String> _cn = ['一', '二', '三', '四', '五', '六', '日'];
+  static List<String> _cn = ['一', '二', '三', '四', '五', '六', '日'];
 
   int _week = 1;
   List<Lesson> _lessons = [];
@@ -125,13 +125,13 @@ class _TodayPageState extends State<TodayPage> {
     m?.clearSnackBars();
     m?.showSnackBar(SnackBar(
       content: Text(msg),
-      duration: const Duration(milliseconds: 1600),
+      duration: Duration(milliseconds: 1600),
     ));
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return Center(child: CircularProgressIndicator());
 
     final now = DateTime.now();
     final nowMin = now.hour * 60 + now.minute;
@@ -188,24 +188,24 @@ class _TodayPageState extends State<TodayPage> {
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Text('${now.month} 月 ${now.day} 日',
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 10),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+          SizedBox(width: 10),
           Padding(
-            padding: const EdgeInsets.only(bottom: 3),
+            padding: EdgeInsets.only(bottom: 3),
             child: Text('星期${_cn[now.weekday - 1]} · 第 $_week 周',
-                style: const TextStyle(fontSize: 13, color: kDim)),
+                style: TextStyle(fontSize: 13, color: kDim)),
           ),
         ],
       ),
-      const SizedBox(height: 14),
+      SizedBox(height: 14),
       Row(
         children: [
           Expanded(child: _stat('今日课程', '${real.length} 节', Icons.menu_book_outlined)),
-          const SizedBox(width: 10),
+          SizedBox(width: 10),
           Expanded(
               child: _stat('放学到点',
                   lastEnd == 0 ? '—' : PeriodTime.hhmm(lastEnd), Icons.flag_outlined)),
-          const SizedBox(width: 10),
+          SizedBox(width: 10),
           Expanded(
               child: _stat(
                   '计划用时',
@@ -214,9 +214,9 @@ class _TodayPageState extends State<TodayPage> {
         ],
       ),
       if (freeHint != null) ...[
-        const SizedBox(height: 12),
+        SizedBox(height: 12),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: kAcc.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(12),
@@ -225,7 +225,7 @@ class _TodayPageState extends State<TodayPage> {
           child: Row(
             children: [
               Icon(Icons.auto_awesome, size: 16, color: kAcc),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Expanded(
                 child: Text(freeHint,
                     style: TextStyle(fontSize: 12.5, color: kAcc)),
@@ -235,21 +235,21 @@ class _TodayPageState extends State<TodayPage> {
         ),
       ],
       if (noEstimate > 0 && timed.isNotEmpty) ...[
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         Text('有 $noEstimate 项计划还没估计用时，估一下才好安排晚上',
-            style: const TextStyle(fontSize: 11, color: kFaint)),
+            style: TextStyle(fontSize: 11, color: kFaint)),
       ],
-      const SizedBox(height: 16),
+      SizedBox(height: 16),
     ];
 
     final foot = <Widget>[
-      const SizedBox(height: 26),
+      SizedBox(height: 26),
       Center(
         child: Text(
           '共 ${real.length} 节课'
           '${firstStart != 0 ? " · 第一节 ${PeriodTime.hhmm(firstStart)}" : ""}'
           '${doneToday > 0 ? " · 今天已完成 $doneToday 项" : ""}',
-          style: const TextStyle(fontSize: 11, color: kFaint),
+          style: TextStyle(fontSize: 11, color: kFaint),
         ),
       ),
     ];
@@ -264,37 +264,37 @@ class _TodayPageState extends State<TodayPage> {
     final sideBody = <Widget>[
       if (overdue.isNotEmpty) ...[
         _sectionTitle('逾期了', '${overdue.length} 项', kDanger),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         Card(
           child: Column(
             children: [
               for (var i = 0; i < overdue.length; i++) ...[
                 _taskTile(overdue[i], overdueMode: true),
-                if (i != overdue.length - 1) const Divider(height: 1),
+                if (i != overdue.length - 1) Divider(height: 1),
               ],
             ],
           ),
         ),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
       ],
       if (loose.isNotEmpty) ...[
         _sectionTitle('待办', '${loose.length} 项', kDim),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         Card(
           child: Column(
             children: [
               for (var i = 0; i < loose.length; i++) ...[
                 _taskTile(loose[i]),
-                if (i != loose.length - 1) const Divider(height: 1),
+                if (i != loose.length - 1) Divider(height: 1),
               ],
             ],
           ),
         ),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
       ],
       if (upcoming.isNotEmpty) ...[
         _sectionTitle('接下来', '${upcoming.length} 项', kDim),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -309,15 +309,15 @@ class _TodayPageState extends State<TodayPage> {
         ),
         if (upcoming.length > 6)
           Padding(
-            padding: const EdgeInsets.only(top: 6),
+            padding: EdgeInsets.only(top: 6),
             child: Text('还有 ${upcoming.length - 6} 项…',
-                style: const TextStyle(fontSize: 11, color: kFaint)),
+                style: TextStyle(fontSize: 11, color: kFaint)),
           ),
-        const SizedBox(height: 18),
+        SizedBox(height: 18),
       ],
       if (pool.isNotEmpty) ...[
         _sectionTitle('计划池', '${pool.length} 项待安排', kDim),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -345,15 +345,15 @@ class _TodayPageState extends State<TodayPage> {
             Expanded(
               flex: 3,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 10, 12, 24),
+                padding: EdgeInsets.fromLTRB(22, 10, 12, 24),
                 children: [...head, ...timelineBody, ...foot],
               ),
             ),
-            const VerticalDivider(width: 1, thickness: 1, color: kLine),
+            VerticalDivider(width: 1, thickness: 1, color: kLine),
             Expanded(
               flex: 2,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(18, 16, 22, 24),
+                padding: EdgeInsets.fromLTRB(18, 16, 22, 24),
                 children: sideBody,
               ),
             ),
@@ -364,7 +364,7 @@ class _TodayPageState extends State<TodayPage> {
 
     return ContentWidth(
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+        padding: EdgeInsets.fromLTRB(20, 10, 20, 28),
         children: [...head, ...timelineBody, ...sideBody, ...foot],
       ),
     );
@@ -493,7 +493,7 @@ class _TodayPageState extends State<TodayPage> {
           SizedBox(
             width: 62,
             child: Padding(
-              padding: const EdgeInsets.only(top: 2),
+              padding: EdgeInsets.only(top: 2),
               child: Text(time,
                   style: TextStyle(
                       fontSize: 11,
@@ -505,7 +505,7 @@ class _TodayPageState extends State<TodayPage> {
           Column(
             children: [
               Container(
-                margin: const EdgeInsets.only(top: 4),
+                margin: EdgeInsets.only(top: 4),
                 width: 9,
                 height: 9,
                 decoration: BoxDecoration(
@@ -523,17 +523,17 @@ class _TodayPageState extends State<TodayPage> {
               Container(width: 2, height: 40, color: kLine),
             ],
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 10),
+              padding: EdgeInsets.only(bottom: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       Icon(icon, size: 14, color: color),
-                      const SizedBox(width: 6),
+                      SizedBox(width: 6),
                       Flexible(
                         child: Text(
                           title,
@@ -549,9 +549,9 @@ class _TodayPageState extends State<TodayPage> {
                         ),
                       ),
                       if (badge != null) ...[
-                        const SizedBox(width: 6),
+                        SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(
+                          padding: EdgeInsets.symmetric(
                               horizontal: 5, vertical: 1),
                           decoration: BoxDecoration(
                             color: kDanger.withValues(alpha: 0.18),
@@ -559,13 +559,13 @@ class _TodayPageState extends State<TodayPage> {
                           ),
                           child: Text(badge,
                               style:
-                                  const TextStyle(fontSize: 9.5, color: kDanger)),
+                                  TextStyle(fontSize: 9.5, color: kDanger)),
                         ),
                       ],
                       if (tag != null) ...[
-                        const SizedBox(width: 6),
+                        SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(
+                          padding: EdgeInsets.symmetric(
                               horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
                             color: color.withValues(alpha: 0.2),
@@ -579,9 +579,9 @@ class _TodayPageState extends State<TodayPage> {
                   ),
                   if (sub.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(left: 20, top: 2),
+                      padding: EdgeInsets.only(left: 20, top: 2),
                       child: Text(sub,
-                          style: const TextStyle(fontSize: 11, color: kDim)),
+                          style: TextStyle(fontSize: 11, color: kDim)),
                     ),
                 ],
               ),
@@ -597,13 +597,13 @@ class _TodayPageState extends State<TodayPage> {
           SizedBox(
             width: 62,
             child: Text(PeriodTime.hhmm(minute),
-                style: const TextStyle(fontSize: 11, color: kDim)),
+                style: TextStyle(fontSize: 11, color: kDim)),
           ),
           Icon(Icons.flag_outlined, size: 13, color: kAcc),
-          const SizedBox(width: 6),
+          SizedBox(width: 6),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
+              padding: EdgeInsets.symmetric(vertical: 6),
               child: Row(
                 children: [
                   Text('放学啦  ${PeriodTime.hhmm(minute)}',
@@ -611,8 +611,8 @@ class _TodayPageState extends State<TodayPage> {
                           fontSize: 12,
                           color: kAcc,
                           fontWeight: FontWeight.w600)),
-                  const SizedBox(width: 8),
-                  const Expanded(child: Divider(color: kLine, height: 1)),
+                  SizedBox(width: 8),
+                  Expanded(child: Divider(color: kLine, height: 1)),
                 ],
               ),
             ),
@@ -636,13 +636,13 @@ class _TodayPageState extends State<TodayPage> {
     return InkWell(
       onTap: () => _toggle(t),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 9, 12, 9),
+        padding: EdgeInsets.fromLTRB(8, 9, 12, 9),
         child: Row(
           children: [
             Container(
               width: 3,
               height: 30,
-              margin: const EdgeInsets.only(right: 8),
+              margin: EdgeInsets.only(right: 8),
               decoration: BoxDecoration(
                   color: overdueMode ? kDanger : c,
                   borderRadius: BorderRadius.circular(3)),
@@ -657,7 +657,7 @@ class _TodayPageState extends State<TodayPage> {
                 onChanged: (_) => _toggle(t),
               ),
             ),
-            const SizedBox(width: 6),
+            SizedBox(width: 6),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -665,9 +665,9 @@ class _TodayPageState extends State<TodayPage> {
                   Text(t.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, height: 1.25)),
+                      style: TextStyle(fontSize: 14, height: 1.25)),
                   if (bits.isNotEmpty) ...[
-                    const SizedBox(height: 3),
+                    SizedBox(height: 3),
                     Text(bits.join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -676,9 +676,9 @@ class _TodayPageState extends State<TodayPage> {
                             color: overdueMode ? kDanger : kDim)),
                   ],
                   if (t.subTotal > 0) ...[
-                    const SizedBox(height: 5),
+                    SizedBox(height: 5),
                     Padding(
-                      padding: const EdgeInsets.only(right: 6),
+                      padding: EdgeInsets.only(right: 6),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(3),
                         child: LinearProgressIndicator(
@@ -695,7 +695,7 @@ class _TodayPageState extends State<TodayPage> {
               ),
             ),
             if (t.priority == 2)
-              const Icon(Icons.priority_high_rounded, size: 16, color: kDanger),
+              Icon(Icons.priority_high_rounded, size: 16, color: kDanger),
           ],
         ),
       ),
@@ -711,11 +711,11 @@ class _TodayPageState extends State<TodayPage> {
     return ActionChip(
       avatar: Icon(icon, size: 15, color: c),
       label: Text(label,
-          style: const TextStyle(fontSize: 12),
+          style: TextStyle(fontSize: 12),
           maxLines: 1,
           overflow: TextOverflow.ellipsis),
       backgroundColor: kCard,
-      side: const BorderSide(color: kLine),
+      side: BorderSide(color: kLine),
       visualDensity: VisualDensity.compact,
       onPressed: () => _toggle(t),
     );
@@ -724,26 +724,26 @@ class _TodayPageState extends State<TodayPage> {
   Widget _sectionTitle(String a, String b, Color c) => Row(
         children: [
           Text(a,
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Text(b, style: TextStyle(fontSize: 12, color: c)),
         ],
       );
 
   Widget _emptyCard(String s) => Card(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+          padding: EdgeInsets.symmetric(vertical: 28, horizontal: 16),
           child: Center(
             child: Text(s,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: kDim, height: 1.6)),
+                style: TextStyle(fontSize: 13, color: kDim, height: 1.6)),
           ),
         ),
       );
 
   Widget _stat(String label, String value, IconData icon) => Container(
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 11),
+        padding: EdgeInsets.symmetric(vertical: 11, horizontal: 11),
         decoration: BoxDecoration(
           color: kCard,
           borderRadius: BorderRadius.circular(14),
@@ -755,21 +755,21 @@ class _TodayPageState extends State<TodayPage> {
             Row(
               children: [
                 Icon(icon, size: 12, color: kDim),
-                const SizedBox(width: 4),
+                SizedBox(width: 4),
                 Expanded(
                   child: Text(label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11, color: kDim)),
+                      style: TextStyle(fontSize: 11, color: kDim)),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: 6),
             Text(value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ],
         ),
       );

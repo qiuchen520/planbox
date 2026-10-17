@@ -8,10 +8,10 @@ class AccentPreset {
   final Color color;
   /// 沉浸式辅助色（用于渐变、光晕）
   final Color glow;
-  const AccentPreset(this.name, this.color, this.glow);
+  AccentPreset(this.name, this.color, this.glow);
 }
 
-const List<AccentPreset> kAccentPresets = [
+List<AccentPreset> kAccentPresets = [
   AccentPreset('靛蓝', Color(0xFF5B9CFF), Color(0xFF8EC0FF)),
   AccentPreset('薄荷', Color(0xFF3ED9A4), Color(0xFF7CF6C6)),
   AccentPreset('紫罗兰', Color(0xFF9E7BFF), Color(0xFFC4ACFF)),
@@ -26,10 +26,10 @@ const List<AccentPreset> kAccentPresets = [
 class SubjectPreset {
   final String name;
   final List<Color> colors;
-  const SubjectPreset(this.name, this.colors);
+  SubjectPreset(this.name, this.colors);
 }
 
-const List<SubjectPreset> kSubjectPresets = [
+List<SubjectPreset> kSubjectPresets = [
   SubjectPreset('多彩', [
     Color(0xFF5B9CFF),
     Color(0xFFFF8A65),
@@ -89,6 +89,40 @@ class Pal {
   static int accIdx = 0;
   static int subIdx = 0;
 
+  /// 是否深色模式
+  static bool dark = true;
+
+  // ── 深色中性色 ──
+  static Color _dBg = Color(0xFF0F1115);
+  static Color _dCard = Color(0xFF181B22);
+  static Color _dCard2 = Color(0xFF20242D);
+  static Color _dLine = Color(0xFF2A2F3A);
+  static Color _dDim = Color(0xFF8B93A5);
+  static Color _dFaint = Color(0xFF5C6474);
+
+  // ── 浅色中性色 ──
+  static Color _lBg = Color(0xFFF4F6FA);
+  static Color _lCard = Color(0xFFFFFFFF);
+  static Color _lCard2 = Color(0xFFEDF0F6);
+  static Color _lLine = Color(0xFFDCE1EB);
+  static Color _lDim = Color(0xFF5F6775);
+  static Color _lFaint = Color(0xFF98A0AE);
+
+  static Color get bg => dark ? _dBg : _lBg;
+  static Color get card => dark ? _dCard : _lCard;
+  static Color get card2 => dark ? _dCard2 : _lCard2;
+  static Color get line => dark ? _dLine : _lLine;
+  static Color get dim => dark ? _dDim : _lDim;
+  static Color get faint => dark ? _dFaint : _lFaint;
+
+  // 语义色：浅色下需要压暗才能在白底上看清
+  static Color get danger =>
+      dark ? Color(0xFFFF5D6C) : Color(0xFFD93025);
+  static Color get warn =>
+      dark ? Color(0xFFFFB340) : Color(0xFFC17600);
+  static Color get ok =>
+      dark ? Color(0xFF3ED9A4) : Color(0xFF0F9D6B);
+
   /// 版本号，递增即触发重建
   static final ValueNotifier<int> rev = ValueNotifier<int>(0);
 
@@ -108,13 +142,23 @@ class Pal {
     }
     return subjects[h % subjects.length];
   }
-
   static Future<void> load() async {
     final a = int.tryParse(await DB.i.getSetting('accent_idx') ?? '0') ?? 0;
     final s = int.tryParse(await DB.i.getSetting('subject_idx') ?? '0') ?? 0;
+    final d = await DB.i.getSetting('dark_mode') ?? '1';
     accIdx = a.clamp(0, kAccentPresets.length - 1);
     subIdx = s.clamp(0, kSubjectPresets.length - 1);
+    dark = d != '0';
   }
+
+  /// 切换明暗模式
+  static Future<void> setDark(bool v) async {
+    if (v == dark) return;
+    dark = v;
+    await DB.i.setSetting('dark_mode', v ? '1' : '0');
+    rev.value++;
+  }
+
 
   static Future<void> setAccent(int i) async {
     final v = i.clamp(0, kAccentPresets.length - 1);
@@ -136,5 +180,5 @@ class Pal {
   }
 }
 
-/// 中性灰（不随主题变），避免 palette 依赖 theme 造成循环引用
-const Color kDimNeutral = Color(0xFF8B93A5);
+/// 中性灰（跟随明暗），避免 palette 依赖 theme 造成循环引用
+Color get kDimNeutral => Pal.dim;

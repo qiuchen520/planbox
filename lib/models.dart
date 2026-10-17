@@ -247,7 +247,7 @@ class Task {
     return m == 0 ? '$h 小时' : '$h 小时 $m 分';
   }
 
-  static const List<String> _wdCn = ['一', '二', '三', '四', '五', '六', '日'];
+  static List<String> _wdCn = ['一', '二', '三', '四', '五', '六', '日'];
 
   String get repeatLabel {
     switch (repeatKind) {
@@ -329,7 +329,7 @@ class Task {
 class PeriodTime {
   final String s;
   final String e;
-  const PeriodTime(this.s, this.e);
+  PeriodTime(this.s, this.e);
 
   Map<String, Object?> toJson() => {'s': s, 'e': e};
 
@@ -352,7 +352,7 @@ class PeriodTime {
   int get endMin => minutes(e);
 }
 
-const List<PeriodTime> kDefaultPeriodTimes = [
+List<PeriodTime> kDefaultPeriodTimes = [
   PeriodTime('08:00', '08:45'),
   PeriodTime('08:55', '09:40'),
   PeriodTime('10:00', '10:45'),
