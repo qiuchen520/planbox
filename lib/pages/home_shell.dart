@@ -101,5 +101,5 @@ class _Dest {
   final String label;
   final IconData icon;
   final IconData active;
-  const _Dest(this.label, this.icon, this.active);
+  _Dest(this.label, this.icon, this.active);
 }

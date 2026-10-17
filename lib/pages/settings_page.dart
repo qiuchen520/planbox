@@ -55,7 +55,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
 
         // ── 配色 ─────────────────────────────
-        const _H('配色'),
+        _H('配色'),
         Card(
           child: Padding(
             padding: EdgeInsets.fromLTRB(14, 14, 14, 16),
@@ -160,7 +160,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
 
         // ── 学期 ─────────────────────────────
-        const _H('学期'),
+        _H('学期'),
         Card(
           child: Column(
             children: [
@@ -246,7 +246,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
 
         // ── 节次时间 ─────────────────────────
-        const _H('每节课的时间'),
+        _H('每节课的时间'),
         Card(
           child: Column(
             children: [
@@ -272,7 +272,7 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
 
         // ── 数据 ─────────────────────────────
-        const _H('数据'),
+        _H('数据'),
         Card(
           child: Column(
             children: [
@@ -370,7 +370,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
 class _H extends StatelessWidget {
   final String text;
-  const _H(this.text);
+  _H(this.text);
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -386,7 +386,7 @@ class _AccentDot extends StatelessWidget {
   final AccentPreset preset;
   final bool selected;
   final VoidCallback onTap;
-  const _AccentDot({
+  _AccentDot({
     required this.preset,
     required this.selected,
     required this.onTap,
@@ -442,7 +442,7 @@ class _SubPaletteChip extends StatelessWidget {
   final SubjectPreset preset;
   final bool selected;
   final VoidCallback onTap;
-  const _SubPaletteChip({
+  _SubPaletteChip({
     required this.preset,
     required this.selected,
     required this.onTap,

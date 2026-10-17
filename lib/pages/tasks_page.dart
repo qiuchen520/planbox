@@ -721,7 +721,7 @@ class _TasksPageState extends State<TasksPage> {
           color: kWarn));
     }
     if (t.note.isNotEmpty) {
-      tags.add(const _Tag(icon: Icons.notes_rounded, text: '', color: kFaint));
+      tags.add(_Tag(icon: Icons.notes_rounded, text: '', color: kFaint));
     }
 
     return InkWell(
@@ -829,7 +829,7 @@ class _Res {
 
 class _TaskEditor extends StatefulWidget {
   final Task? task;
-  const _TaskEditor({this.task});
+  _TaskEditor({this.task});
 
   @override
   State<_TaskEditor> createState() => _TaskEditorState();
@@ -1337,7 +1337,7 @@ class _TaskEditorState extends State<_TaskEditor> {
 class _Label extends StatelessWidget {
   final String text;
   final String? trailing;
-  const _Label(this.text, {this.trailing});
+  _Label(this.text, {this.trailing});
 
   @override
   Widget build(BuildContext context) => Row(
@@ -1360,7 +1360,7 @@ class _Tag extends StatelessWidget {
   final IconData icon;
   final String text;
   final Color color;
-  const _Tag({required this.icon, required this.text, required this.color});
+  _Tag({required this.icon, required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) => Row(
@@ -1379,7 +1379,7 @@ class _StatCard extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
-  const _StatCard(
+  _StatCard(
       {required this.label, required this.value, required this.color});
 
   @override
@@ -1413,7 +1413,7 @@ class _FilterChip2 extends StatelessWidget {
   final bool selected;
   final int? count;
   final VoidCallback onTap;
-  const _FilterChip2({
+  _FilterChip2({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -1466,7 +1466,7 @@ class _PickChip extends StatelessWidget {
   final bool selected;
   final Color color;
   final VoidCallback onTap;
-  const _PickChip({
+  _PickChip({
     required this.label,
     required this.selected,
     required this.color,
@@ -1504,7 +1504,7 @@ class _SwitchRow extends StatelessWidget {
   final String sub;
   final bool value;
   final ValueChanged<bool> onChanged;
-  const _SwitchRow({
+  _SwitchRow({
     required this.title,
     required this.sub,
     required this.value,
@@ -1542,7 +1542,7 @@ class _TimeRow extends StatelessWidget {
   final bool active;
   final Future<void> Function() onPick;
   final VoidCallback? onClear;
-  const _TimeRow({
+  _TimeRow({
     required this.icon,
     required this.label,
     required this.text,

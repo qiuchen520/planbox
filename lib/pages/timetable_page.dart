@@ -24,7 +24,7 @@ class _Block {
   final int start;
   final int span;
   final _CellView v;
-  const _Block(this.start, this.span, this.v);
+  _Block(this.start, this.span, this.v);
 }
 
 class TimetablePage extends StatefulWidget {
