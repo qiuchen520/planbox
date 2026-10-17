@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../responsive.dart';
+import '../theme.dart';
 import 'settings_page.dart';
 import 'tasks_page.dart';
 import 'today_page.dart';
@@ -15,47 +17,89 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
+  static const List<_Dest> _dests = [
+    _Dest('今日', Icons.wb_sunny_outlined, Icons.wb_sunny),
+    _Dest('课表', Icons.calendar_month_outlined, Icons.calendar_month),
+    _Dest('计划', Icons.checklist_outlined, Icons.checklist),
+    _Dest('我的', Icons.person_outline, Icons.person),
+  ];
+
+  Widget _page(int i) => switch (i) {
+        0 => const TodayPage(key: PageStorageKey('today')),
+        1 => const TimetablePage(key: PageStorageKey('timetable')),
+        2 => const TasksPage(key: PageStorageKey('tasks')),
+        _ => const SettingsPage(key: PageStorageKey('settings')),
+      };
+
   @override
   Widget build(BuildContext context) {
+    final wide = isWideScreen(context);
+    final body = SafeArea(bottom: !wide, child: _page(_index));
+
+    if (wide) {
+      // 平板 / 横屏：左侧竖排导航，右侧留满内容区
+      return Scaffold(
+        body: SafeArea(
+          child: Row(
+            children: [
+              NavigationRail(
+                selectedIndex: _index,
+                onDestinationSelected: (i) => setState(() => _index = i),
+                labelType: NavigationRailLabelType.all,
+                backgroundColor: kCard,
+                indicatorColor: kAcc.withValues(alpha: 0.20),
+                selectedIconTheme: IconThemeData(color: kAcc, size: 24),
+                unselectedIconTheme: const IconThemeData(color: kDim, size: 22),
+                selectedLabelTextStyle: TextStyle(
+                    color: kAcc, fontSize: 12, fontWeight: FontWeight.w600),
+                unselectedLabelTextStyle:
+                    const TextStyle(color: kDim, fontSize: 12),
+                leading: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Icon(Icons.check_box_outlined,
+                      color: kAcc, size: 26),
+                ),
+                destinations: [
+                  for (final d in _dests)
+                    NavigationRailDestination(
+                      icon: Icon(d.icon),
+                      selectedIcon: Icon(d.active),
+                      label: Text(d.label),
+                    ),
+                ],
+              ),
+              const VerticalDivider(width: 1, thickness: 1, color: kLine),
+              Expanded(child: body),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: switch (_index) {
-          0 => const TodayPage(),
-          1 => const TimetablePage(),
-          2 => const TasksPage(),
-          _ => const SettingsPage(),
-        },
-      ),
+      body: body,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         height: 62,
-        backgroundColor: const Color(0xFF181B22),
-        indicatorColor: const Color(0xFF5B9CFF).withValues(alpha: 0.18),
+        backgroundColor: kCard,
+        indicatorColor: kAcc.withValues(alpha: 0.18),
         onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.wb_sunny_outlined),
-            selectedIcon: Icon(Icons.wb_sunny),
-            label: '今日',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month),
-            label: '课表',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.checklist_outlined),
-            selectedIcon: Icon(Icons.checklist),
-            label: '计划',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: '我的',
-          ),
+        destinations: [
+          for (final d in _dests)
+            NavigationDestination(
+              icon: Icon(d.icon),
+              selectedIcon: Icon(d.active),
+              label: d.label,
+            ),
         ],
       ),
     );
   }
+}
+
+class _Dest {
+  final String label;
+  final IconData icon;
+  final IconData active;
+  const _Dest(this.label, this.icon, this.active);
 }
