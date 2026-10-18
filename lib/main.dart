@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data/db.dart';
+import 'pages/agreement.dart';
 import 'pages/home_shell.dart';
 import 'palette.dart';
 import 'services/notify.dart';
@@ -51,6 +52,8 @@ class PlanBoxApp extends StatefulWidget {
 }
 
 class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
+  Timer? _hideTimer;
+
   @override
   void initState() {
     super.initState();
@@ -60,6 +63,7 @@ class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _hideTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -68,6 +72,23 @@ class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) _enterImmersive();
+  }
+
+  /// 关键：immersiveSticky 在不少国产 ROM（读书郎这类定制系统尤其如此）上下滑唤出后会
+  /// 一直赖着不走。这里盯着窗口 padding：一旦顶部又有了状态栏高度，就启动一个两秒的
+  /// 计时器把它重新藏回去 —— 用户能看一眼时间，然后它自己消失。
+  @override
+  void didChangeMetrics() {
+    final v = WidgetsBinding.instance.platformDispatcher.views.first;
+    final top = v.viewPadding.top / v.devicePixelRatio;
+    if (top > 0.5) {
+      _hideTimer?.cancel();
+      _hideTimer = Timer(const Duration(seconds: 2), () {
+        _enterImmersive();
+        // 有的 ROM 对单次调用不理会，隔一拍再补一次
+        Future<void>.delayed(const Duration(milliseconds: 400), _enterImmersive);
+      });
+    }
   }
 
   @override
@@ -79,7 +100,7 @@ class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
         title: 'PlanBox',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
-        home: HomeShell(),
+        home: AgreementGate(child: HomeShell()),
       ),
     );
   }
