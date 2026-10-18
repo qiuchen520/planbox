@@ -1,7 +1,6 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-
+import 'package:flutter/services.dart';
 import '../data/db.dart';
 import '../models.dart';
 import '../palette.dart';
@@ -9,6 +8,7 @@ import '../responsive.dart';
 import '../services/backup.dart';
 import '../services/notify.dart';
 import '../theme.dart';
+import 'agreement.dart';
 
 class SettingsPage extends StatefulWidget {
   SettingsPage({super.key});
@@ -68,6 +68,12 @@ class _SettingsPageState extends State<SettingsPage> {
     final m = ScaffoldMessenger.maybeOf(context);
     m?.clearSnackBars();
     m?.showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 复制到剪贴板并给个回执，方便别人加群 / 加好友
+  Future<void> _copy(String label, String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    _toast('已复制$label：$value');
   }
 
   String _d(DateTime d) =>
@@ -546,13 +552,64 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
 
         SizedBox(height: 20),
+        // ── 关于 ─────────────────────────────
+        _H('关于'),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: Icon(Icons.person_outline),
+                title: Text('作者'),
+                subtitle: Text('${About.author}　开源 GPL-3.0'),
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.chat_bubble_outline),
+                title: Text('QQ'),
+                subtitle: Text(About.qq),
+                trailing: Icon(Icons.copy, size: 16, color: kFaint),
+                onTap: () => _copy('QQ 号', About.qq),
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.auto_awesome_outlined),
+                title: Text('小红书'),
+                subtitle: Text(About.xhs),
+                trailing: Icon(Icons.copy, size: 16, color: kFaint),
+                onTap: () => _copy('小红书名', About.xhs),
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.groups_outlined),
+                title: Text('官方 QQ 群'),
+                subtitle: Text(About.qqGroup),
+                trailing: Icon(Icons.copy, size: 16, color: kFaint),
+                onTap: () => _copy('QQ 群号', About.qqGroup),
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.gavel_outlined),
+                title: Text('使用协议与隐私说明'),
+                subtitle: Text('数据只在本机、提醒不保证绝对准时、免责声明'),
+                onTap: () => showAgreementDialog(context, mustAgree: false),
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.info_outline),
+                title: Text('版本'),
+                subtitle: Text('v${About.version} · 构建号见安装包'),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: 16),
         Center(
-          child: Text('PlanBox v0.5.0 · 开源 GPL-3.0',
+          child: Text('PlanBox v${About.version} · 开源 GPL-3.0',
               style: TextStyle(fontSize: 11, color: kFaint)),
         ),
         SizedBox(height: 6),
         Center(
-          child: Text('数据全在本机 · 不联网 · 不收集任何信息',
+          child: Text('© 2026 ${About.author} · 数据全在本机 · 不联网 · 不收集任何信息',
               style: TextStyle(fontSize: 11, color: kFaint)),
         ),
       ],
