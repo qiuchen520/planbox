@@ -521,7 +521,7 @@ class HudService : Service() {
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
             text = "⏱"
-            lineSpacing(dp(2f).toFloat(), 1f)
+            setLineSpacing(dp(2f).toFloat(), 1f)
         }
         box.addView(
             miniClock,
