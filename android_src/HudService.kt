@@ -362,16 +362,20 @@ class HudService : Service() {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(4f),
             ).apply { topMargin = dp(5f) }
         }
-        sessionBox.addView(sessTop)
-        sessionBox.addView(sessionBar)
-        p.addView(sessionBox)
+        val sbox = sessionBox
+        if (sbox != null) {
+            sbox.addView(sessTop)
+            sessionBar?.let { sbox.addView(it) }
+            p.addView(sbox)
+        }
 
         // 任务列表
-        tasksBox = LinearLayout(this).apply {
+        val tbox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(4f), 0, 0)
         }
-        p.addView(tasksBox)
+        tasksBox = tbox
+        p.addView(tbox)
 
         val foot = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
