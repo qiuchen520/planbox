@@ -62,7 +62,7 @@ class UpdateChecker {
     'ghproxy.net': 'https://ghproxy.net/',
     'gh-proxy.com': 'https://gh-proxy.com/',
     'ghfast.top': 'https://ghfast.top/',
-    'gitmirror': 'https://hub.gitmirror.com/',
+    'gh-proxy': 'https://gh-proxy.net/',
   };
 
   // ── 查询最新版本 ─────────────────────────────────────
@@ -70,9 +70,16 @@ class UpdateChecker {
   /// 有新版返回信息，没有新版（或压根没网）返回 null。
   /// [error] 只在「本该成功却失败」时调用，用来区分「已是最新」。
   static Future<UpdateInfo?> latest({void Function(String)? error}) async {
-    // 先问 releases/latest（会 302 到 /releases/tag/<tag>）；
-    // 万一仓库里最新那条被标成了 prerelease，latest 会 404，
-    // 那就退一步去 releases 列表页抓第一条 —— 页面里的链接格式完全一样。
+    // 顺序是照着「这台机器实测」排的：
+    //   api.github.com 通、github.com:443 连不上（超时），所以 API 先上；
+    //   万一哪天 API 被限流或解析不了，再退到网页版 + 加速线路。
+    final viaApi = await _apiFirst();
+    if (viaApi != null) {
+      if (_compare(viaApi.version, About.version) <= 0) return null;
+      return viaApi;
+    }
+    // releases/latest 会 302 到 /releases/tag/<tag>；如果最新那条被标成
+    // prerelease，latest 会 404，那就退一步抓 releases 列表页。
     final pages = <String>[
       'https://github.com/$_repo/releases/latest',
       'https://github.com/$_repo/releases',
@@ -88,14 +95,8 @@ class UpdateChecker {
       }
       if (tag != null) break;
     }
-
     if (tag == null) {
-      final r = await _apiFallback();
-      if (r != null) {
-        if (_compare(r.version, About.version) <= 0) return null;
-        return r;
-      }
-      error?.call('直连、4 条加速线路、API 都没通。确认一下是不是断网了，'
+      error?.call('API、直连、4 条加速线路都没通。确认一下是不是断网了，'
           '或者过一会儿再点重试。');
       return null;
     }
@@ -250,8 +251,8 @@ class UpdateChecker {
     return null;
   }
 
-  /// 最后的兜底：万一 github.com 不通而 API 通（有些网络正好反向），走一次 API。
-  static Future<UpdateInfo?> _apiFallback() async {
+  /// 走 GitHub API 查最新版（这台机器实测 api.github.com 通、github.com 不通）。
+  static Future<UpdateInfo?> _apiFirst() async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       final req = await client.getUrl(
