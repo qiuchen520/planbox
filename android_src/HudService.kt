@@ -134,6 +134,7 @@ class HudService : Service() {
     private var sessionBar: ProgressBar? = null
     private var sessionBox: LinearLayout? = null
     private var tasksBox: LinearLayout? = null
+    private var miniClock: TextView? = null
     private var lp: WindowManager.LayoutParams? = null
 
     private var scale = 1f
