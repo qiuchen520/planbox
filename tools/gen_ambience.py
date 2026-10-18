@@ -11,6 +11,11 @@
   python3 tools/gen_ambience.py <原始wav目录>
 原始文件先转成 22050Hz 单声道 16bit：
   ffmpeg -i xxx.ogg -ac 1 -ar 22050 -c:a pcm_s16le xxx_raw.wav
+
+调音思路：
+  白噪音原始是全频段平坦的，直接放出来就是「嘶——」，刺耳。
+  这里用两级一阶低通把它做成「空调 / 风扇」那种气流底噪，
+  再用高通削掉 100 Hz 以下的轰鸣（那部分只是让扬声器发闷，不助眠）。
 """
 import math
 import os
@@ -21,11 +26,14 @@ import wave
 RATE = 22050
 XFADE = 0.6          # 接缝交叉淡化秒数
 
-# 每个音源截多长、要不要再压一点高频（白噪音原样太刺耳）
+# lowpass / highpass 都是级联的 alpha 列表，空列表表示不动
 SPEC = {
-    'white': dict(raw='white_raw.wav', keep=15.0, lowpass=0.25, target_rms_db=-21.0),
-    'pink':  dict(raw='pink_raw.wav',  keep=10.0, lowpass=1.00, target_rms_db=-21.0),
-    'rain':  dict(raw='rain_raw.wav',  keep=20.0, lowpass=1.00, target_rms_db=-19.0),
+    'white': dict(raw='white_raw.wav', keep=15.0,
+                  lowpass=[0.22, 0.22], highpass=[0.030], target_rms_db=-20.0),
+    'pink':  dict(raw='pink_raw.wav',  keep=10.0,
+                  lowpass=[], highpass=[0.030], target_rms_db=-20.0),
+    'rain':  dict(raw='rain_raw.wav',  keep=20.0,
+                  lowpass=[], highpass=[0.020], target_rms_db=-17.5),
 }
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -50,10 +58,7 @@ def write_wav(path, sig):
         ))
 
 
-def lowpass(sig, alpha):
-    """一阶低通，alpha=1 表示不动"""
-    if alpha >= 1.0:
-        return sig
+def one_pole_lp(sig, alpha):
     out = []
     last = sig[0] if sig else 0.0
     for x in sig:
@@ -62,13 +67,18 @@ def lowpass(sig, alpha):
     return out
 
 
-def dc_block(sig):
-    """去掉直流偏置，否则扬声器会被一直顶着"""
-    n = len(sig)
-    if not n:
-        return sig
-    mean = sum(sig) / n
-    return [x - mean for x in sig]
+def apply_lowpass(sig, alphas):
+    for a in alphas:
+        sig = one_pole_lp(sig, a)
+    return sig
+
+
+def apply_highpass(sig, alphas):
+    """x - 低通(x) 就是一阶高通"""
+    for a in alphas:
+        lp = one_pole_lp(sig, a)
+        sig = [x - y for x, y in zip(sig, lp)]
+    return sig
 
 
 def rms_normalize(sig, target_db):
@@ -111,8 +121,8 @@ def main():
             print('缺少', raw)
             continue
         sig = read_wav(raw)
-        sig = lowpass(sig, cfg['lowpass'])
-        sig = dc_block(sig)
+        sig = apply_lowpass(sig, cfg['lowpass'])
+        sig = apply_highpass(sig, cfg['highpass'])
         sig = make_loop(sig, cfg['keep'])
         sig = rms_normalize(sig, cfg['target_rms_db'])
         peak = max(abs(x) for x in sig) or 1.0
