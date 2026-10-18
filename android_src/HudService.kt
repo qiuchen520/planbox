@@ -246,6 +246,12 @@ class HudService : Service() {
     private fun panelWidth(): Int {
         val dm = resources.displayMetrics
         val wdp = dm.widthPixels / dm.density
+        // 手机（<=480dp）：0.32f 算出来只有 115dp，却被 238f 下限顶回去，
+        // 再加 40dp 把手就占了屏宽 77%，一展开整块屏幕都被挡。
+        // 窄屏改成跟屏宽走并留出边距，平板保持原样。
+        if (wdp <= 480f) {
+            return dp((wdp * 0.78f - 40f).coerceIn(210f, 380f))
+        }
         return dp((wdp * 0.32f).coerceIn(238f, 380f))
     }
 

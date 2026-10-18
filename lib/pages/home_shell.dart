@@ -137,15 +137,18 @@ class _HomeShellState extends State<HomeShell> {
       body: body,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        height: 62,
+        height: 58,
+        // 六个 Tab 在手机上每个只有 60dp 宽，中文两字 + 图标并排必挤。
+        // 只让选中项显示文字，图标恒居中，宽度够了也不会左右乱跳。
+        labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
         backgroundColor: kCard,
         indicatorColor: kAcc.withValues(alpha: 0.18),
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: [
           for (final d in _dests)
             NavigationDestination(
-              icon: Icon(d.icon),
-              selectedIcon: Icon(d.active),
+              icon: Icon(d.icon, size: 22),
+              selectedIcon: Icon(d.active, size: 22),
               label: d.label,
             ),
         ],

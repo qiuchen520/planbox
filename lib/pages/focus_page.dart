@@ -578,75 +578,95 @@ class _FocusPageState extends State<FocusPage>
     );
   }
 
+  /// 顶栏图标统一压到 34dp。默认 IconButton 是 48dp，四个就吃掉 192dp，
+  /// 360dp 的手机上标题只剩不到 150dp，会被挤成一条缝。
+  Widget _iconBtn({
+    required IconData icon,
+    required String tip,
+    required VoidCallback onTap,
+    Color? color,
+    double size = 19,
+  }) =>
+      IconButton(
+        icon: Icon(icon, size: size, color: color ?? kDim),
+        tooltip: tip,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+        onPressed: onTap,
+      );
+
   Widget _topBar(Task t) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 6, 14, 0),
+      padding: const EdgeInsets.fromLTRB(6, 6, 8, 0),
       child: Row(
         children: [
-          IconButton(
-            icon: Icon(Icons.close, color: kFg),
-            tooltip: '退出',
-            onPressed: () async {
+          _iconBtn(
+            icon: Icons.close,
+            tip: '退出',
+            color: kFg,
+            onTap: () async {
               if (await _onWillPop() && mounted) Navigator.pop(context, false);
             },
           ),
           // 桌面悬浮窗：就挂在退出旁边，亮着=正在挂
-          IconButton(
-            icon: Icon(
-              _hudOn
-                  ? Icons.picture_in_picture_alt
-                  : Icons.picture_in_picture_alt_outlined,
-              size: 20,
-              color: _hudOn ? kAcc : kDim,
-            ),
-            tooltip: _hudOn ? '悬浮窗已挂（点关掉）' : '把番茄挂到桌面（点打开）',
-            onPressed: () => unawaited(_toggleHud()),
+          _iconBtn(
+            icon: _hudOn
+                ? Icons.picture_in_picture_alt
+                : Icons.picture_in_picture_alt_outlined,
+            tip: _hudOn ? '悬浮窗已挂（点关掉）' : '把番茄挂到桌面（点打开）',
+            color: _hudOn ? kAcc : kDim,
+            onTap: () => unawaited(_toggleHud()),
           ),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  t.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700, color: kFg),
-                ),
-                if (t.subject.isNotEmpty || t.estimate > 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      [
-                        if (t.subject.isNotEmpty) t.subject,
-                        if (t.estimate > 0) '预估 ${t.estimateLabel}',
-                      ].join(' · '),
-                      style: TextStyle(fontSize: 11.5, color: kDim),
-                    ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    t.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 14.5, fontWeight: FontWeight.w700, color: kFg),
                   ),
-              ],
+                  if (t.subject.isNotEmpty || t.estimate > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        [
+                          if (t.subject.isNotEmpty) t.subject,
+                          if (t.estimate > 0) '预估 ${t.estimateLabel}',
+                        ].join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, color: kDim),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           // 权限入口（开关在底部那排 chip 里，这里只管去授权）
-          IconButton(
-            icon: Icon(
-              _guardOn
-                  ? Icons.shield
-                  : (_guardPref ? Icons.shield_outlined : Icons.shield_moon_outlined),
-              size: 20,
-              color: _guardOn ? kAcc : kDim,
-            ),
-            tooltip: _guardOn
+          _iconBtn(
+            icon: _guardOn
+                ? Icons.shield
+                : (_guardPref ? Icons.shield_outlined : Icons.shield_moon_outlined),
+            tip: _guardOn
                 ? '守护中（点查权限）'
                 : (_guardPref
                     ? '守护开着但缺权限（点去授权）'
                     : '守护已关（点查权限；开关在底部）'),
-            onPressed: () => PermissionPage.open(context),
+            color: _guardOn ? kAcc : kDim,
+            onTap: () => PermissionPage.open(context),
           ),
-          IconButton(
-            icon: Icon(Icons.playlist_add_check, color: kDim, size: 20),
-            tooltip: '专注白名单',
-            onPressed: () => WhitelistPage.open(context),
+          _iconBtn(
+            icon: Icons.playlist_add_check,
+            tip: '专注白名单',
+            color: kDim,
+            onTap: () => WhitelistPage.open(context),
           ),
         ],
       ),
@@ -664,7 +684,9 @@ class _FocusPageState extends State<FocusPage>
       child: LayoutBuilder(
         builder: (context, box) {
           final side = math.min(box.maxWidth, box.maxHeight) * 0.82;
-          final d = side.clamp(200.0, 460.0).toDouble();
+          // 手机上顶栏 + 底部按钮吃掉不少高度，200dp 的死下限会把圈顶出屏幕。
+          final lo = math.min(200.0, box.maxHeight);
+          final d = side.clamp(lo, 460.0).toDouble();
           return SizedBox(
             width: d,
             height: d,

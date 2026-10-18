@@ -443,9 +443,11 @@ class _TasksPageState extends State<TasksPage> {
         ),
         Spacer(),
         if (_showSearch)
-          SizedBox(
-            width: 200,
-            height: 36,
+          Flexible(
+            fit: FlexFit.loose,
+            child: SizedBox(
+              width: 200,
+              height: 36,
             child: TextField(
               controller: _search,
               autofocus: true,
@@ -464,6 +466,7 @@ class _TasksPageState extends State<TasksPage> {
               ),
               onChanged: (_) => setState(() {}),
             ),
+            ),
           )
         else
           IconButton(
@@ -477,33 +480,47 @@ class _TasksPageState extends State<TasksPage> {
     body.add(SizedBox(height: 14));
 
     // 统计
-    body.add(Row(
-      children: [
-        Expanded(
-            child: _StatCard(
-                label: '今日待做',
-                value: '${_tasks.where((t) => !t.done && _bucketOf(t) == _B.today).length} 项',
-                color: kAcc)),
-        SizedBox(width: 10),
-        Expanded(
-            child: _StatCard(
-                label: '今天预计',
-                value: todayLoad == 0 ? '—' : _mins(todayLoad),
-                color: kWarn)),
-        SizedBox(width: 10),
-        Expanded(
-            child: _StatCard(
-                label: '本周预计',
-                value: weekLoad == 0 ? '—' : _mins(weekLoad),
-                color: kOk)),
-        SizedBox(width: 10),
-        Expanded(
-            child: _StatCard(
-                label: overdue > 0 ? '逾期 / 打卡' : '累计打卡',
-                value: overdue > 0 ? '$overdue / $streaks' : '$streaks 次',
-                color: overdue > 0 ? kDanger : kDim)),
-      ],
-    ));
+    final statCards = <Widget>[
+      _StatCard(
+          label: '今日待做',
+          value:
+              '${_tasks.where((t) => !t.done && _bucketOf(t) == _B.today).length} 项',
+          color: kAcc),
+      _StatCard(
+          label: '今天预计',
+          value: todayLoad == 0 ? '—' : _mins(todayLoad),
+          color: kWarn),
+      _StatCard(
+          label: '本周预计',
+          value: weekLoad == 0 ? '—' : _mins(weekLoad),
+          color: kOk),
+      _StatCard(
+          label: overdue > 0 ? '逾期 / 打卡' : '累计打卡',
+          value: overdue > 0 ? '$overdue / $streaks' : '$streaks 次',
+          color: overdue > 0 ? kDanger : kDim),
+    ];
+    // 四张卡硬挤一行，手机上每张只剩 70dp，「今日待做」+ 数字会被压扁。
+    // 窄屏改成 2×2，宽屏还是一条。
+    body.add(LayoutBuilder(builder: (ctx, box) {
+      if (box.maxWidth >= 460) {
+        return Row(
+          children: [
+            for (var i = 0; i < statCards.length; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: statCards[i]),
+            ],
+          ],
+        );
+      }
+      final w = (box.maxWidth - 10) / 2;
+      return Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          for (final c in statCards) SizedBox(width: w, child: c),
+        ],
+      );
+    }));
     body.add(SizedBox(height: 14));
 
     // 快速添加
