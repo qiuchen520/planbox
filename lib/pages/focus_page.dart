@@ -160,18 +160,26 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
     });
   }
 
-  void _pause() {
+  /// 暂停：计时停住，同时把「专注守护」和应用锁一起撤掉。
+  /// 以前这里只停了计时，原生守护还开着，切到别的应用照样被锁屏拦住。
+  Future<void> _pause() async {
     _syncRemain();
     _ticker?.cancel();
     _anchor = null;
     Ambience.i.pause();
-    setState(() => _running = false);
-    unawaited(FocusGuard.saveSession(
+    setState(() {
+      _running = false;
+      _guardOn = false;
+    });
+    // 顺序要紧：end() 会顺手把会话标记清掉，所以要先把「暂停中」的进度写回去
+    await FocusGuard.end();
+    if (!mounted) return;
+    await FocusGuard.saveSession(
       taskId: widget.task.id,
       totalSec: _totalSec,
       remainSec: _remainSec,
       running: false,
-    ));
+    );
   }
 
   /// 把原生守护点起来。权限不齐就先问一句，不强行开始。
@@ -224,10 +232,14 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
 
   void _reset() {
     _ticker?.cancel();
+    _anchor = null;
     setState(() {
       _running = false;
       _remainSec = _totalSec;
+      _guardOn = false;
     });
+    // 重置等于这一轮作废，守护也别继续挂着
+    unawaited(FocusGuard.end());
   }
 
   void _chooseMinutes(int m) {
@@ -584,7 +596,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
               children: [
                 _big(
                   _running ? '暂停' : (_remainSec == 0 ? '重新开始' : '继续'),
-                  _running ? _pause : _start,
+                  _running ? () => unawaited(_pause()) : _start,
                   primary: true,
                   icon: _running ? Icons.pause : Icons.play_arrow,
                 ),

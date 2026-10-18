@@ -20,6 +20,10 @@ MANIFEST = APP / "src" / "main" / "AndroidManifest.xml"
 # 通知要用到的权限：发通知 / 震动 / 开机后恢复闹钟 / 精确闹钟
 # 专注守护额外要：读前台应用（使用情况访问）、盖在别的应用上层（悬浮窗）、前台服务
 PERMISSIONS = [
+    # 联网：检查更新、测速、下 APK 全靠它。release 包 Flutter 不会自带，
+    # 少了它所有请求都会变成 SocketException: Failed host lookup，加速器也救不回来。
+    "android.permission.INTERNET",
+    "android.permission.ACCESS_NETWORK_STATE",
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.VIBRATE",
     "android.permission.RECEIVE_BOOT_COMPLETED",

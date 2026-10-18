@@ -89,10 +89,10 @@ class UpdateChecker {
         if (_compare(r.version, About.version) <= 0) return null;
         return r;
       }
-      error?.call('连不上 GitHub，看看网络或者换个加速器');
+      error?.call('直连、4 条加速线路、API 都没通。确认一下是不是断网了，'
+          '或者过一会儿再点重试。');
       return null;
     }
-
     final ver = _parseVersion(tag);
     if (ver == null) {
       error?.call('读到的版本号看不懂：$tag');
@@ -100,14 +100,38 @@ class UpdateChecker {
     }
     // 当前版本已经 >= 最新，就是「已是最新」，不算失败
     if (_compare(ver, About.version) <= 0) return null;
-
+    final url = 'https://github.com/$_repo/releases/download/$tag/$_asset';
     return UpdateInfo(
       version: ver,
       tag: tag,
       notes: '',
-      url: 'https://github.com/$_repo/releases/download/$tag/$_asset',
-      size: 0,
+      url: url,
+      // 大小只用来画进度条，拿不到就当成未知，不影响下载
+      size: await _sizeOf(url),
     );
+  }
+  /// 用 HEAD 问一下这个 apk 有多大。直连不行就借第一条加速线问，
+  /// 全都问不到返回 0（界面上就是「大小未知」+ 不确定进度条）。
+  static Future<int> _sizeOf(String url) async {
+    final tries = <String>[url];
+    final first = _mirrorPrefix.values.first;
+    tries.add('$first$url');
+    for (final u in tries) {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 5);
+      try {
+        final req = await client.headUrl(Uri.parse(u));
+        req.headers.set('User-Agent', 'PlanBox-updater');
+        final res = await req.close().timeout(const Duration(seconds: 6));
+        final len = res.contentLength;
+        if (len > 0) return len;
+      } catch (_) {
+        // 换下一个
+      } finally {
+        client.close(force: true);
+      }
+    }
+    return 0;
   }
 
   /// 读 releases/latest 的 302 Location，从里面抠出 tag。
