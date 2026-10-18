@@ -37,6 +37,9 @@ class Ambience {
   /// 播放失败（解码不支持、音频设备被占用等）时记下来，界面可以提示
   String? lastError;
 
+  /// 现在到底响不响（悬浮窗上的「白噪」按钮要据此切换）
+  bool get playing => _player.playing;
+
   Future<void> setKind(NoiseKind k, {bool resume = true}) async {
     if (k == kind && _player.playing) return;
     kind = k;

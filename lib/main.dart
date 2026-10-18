@@ -11,6 +11,7 @@ import 'pages/home_shell.dart';
 import 'pages/penalty_page.dart';
 import 'palette.dart';
 import 'services/focus_guard.dart';
+import 'services/ambience.dart';
 import 'services/hud.dart';
 import 'services/notify.dart';
 import 'theme.dart';
@@ -112,9 +113,40 @@ Future<void> _hudAction(String action, int taskId) async {
     case 'alreadyDone':
       if (ctx != null) _hudToast(ctx, '今天已经打过卡了');
       break;
+    case 'openToday':
+    case 'focusPage':
+      HomeShell.goto(0);
+      break;
+    case 'openCheckin':
+      HomeShell.goto(1);
+      break;
+    case 'openTimetable':
+      HomeShell.goto(2);
+      break;
+    case 'openCalendar':
+      HomeShell.goto(3);
+      break;
+    case 'settings':
+      HomeShell.goto(5);
+      break;
+    case 'ambience':
+      if (Ambience.i.playing) {
+        await Ambience.i.pause();
+        if (ctx != null) _hudToast(ctx, '白噪音已暂停');
+      } else {
+        if (Ambience.i.kind == NoiseKind.none) {
+          await Ambience.i.setKind(
+            NoiseKind.values.firstWhere((k) => k != NoiseKind.none),
+          );
+        } else {
+          await Ambience.i.resume();
+        }
+        if (ctx != null) _hudToast(ctx, '白噪音已开');
+      }
+      break;
     case 'hudOff':
       await DB.i.setSetting(Hud.settingKey, '0');
-      if (ctx != null) _hudToast(ctx, '悬浮窗已关掉，需要时到「我的」里再开');
+      if (ctx != null) _hudToast(ctx, '悬浮窗已关掉，需要时点番茄钟左上角再开');
       break;
   }
 }

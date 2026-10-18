@@ -59,14 +59,17 @@ class HudService : Service() {
         const val ACTION_START = "top.planbox.HUD_START"
         const val ACTION_STOP = "top.planbox.HUD_STOP"
 
-        private val BG = 0xF01A2130.toInt()
-        private val FG = 0xFFE8EDF6.toInt()
-        private val DIM = 0xFF9AA6B8.toInt()
-        private val ACC = 0xFF5B9CFF.toInt()
-        private val OK = 0xFF57C98A.toInt()
+        // ── 浅色（白）主题 ──
+    private val BG = 0xFFFFFFFF.toInt()      // 卡片底
+    private val FG = 0xFF0F172A.toInt()      // 主文字
+    private val DIM = 0xFF7C8798.toInt()     // 次文字
+    private val LINE = 0xFFE7EBF1.toInt()    // 描边
+    private val SOFT = 0xFFF3F6FA.toInt()    // 浅底块
+    private val ACC = 0xFF5B9CFF.toInt()     // 主色
+    private val ACC_SOFT = 0x1A5B9CFF       // 主色淡底
+    private val OK = 0xFF22B07D.toInt()      // 已完成
 
-        @Volatile
-        var running: Boolean = false
+    var running: Boolean = false
             private set
 
         @Volatile
@@ -124,14 +127,13 @@ class HudService : Service() {
     private var mini: FrameLayout? = null
     private var clockText: TextView? = null
     private var dateText: TextView? = null
+    private var countText: TextView? = null
     private var sessionTitle: TextView? = null
     private var sessionTime: TextView? = null
     private var sessionBtn: TextView? = null
     private var sessionBar: ProgressBar? = null
     private var sessionBox: LinearLayout? = null
     private var tasksBox: LinearLayout? = null
-    private var footText: TextView? = null
-    private var miniClock: TextView? = null
     private var lp: WindowManager.LayoutParams? = null
 
     private var scale = 1f
@@ -286,24 +288,31 @@ class HudService : Service() {
     private fun buildPanel(): View {
         val p = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = round(BG, 16f)
-            setPadding(dp(12f), dp(9f), dp(12f), dp(10f))
+            background = card()
+            setPadding(dp(14f), dp(11f), dp(14f), dp(12f))
             layoutParams = FrameLayout.LayoutParams(panelWidth(), WRAP_CONTENT)
         }
-
-        // 头部：时钟 + 两个小按钮，整行可拖
+        // 头部：时钟 + 日期 + 收起 / 关闭
         val head = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         clockText = TextView(this).apply {
             text = "00:00"
             setTextColor(FG)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 21f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
             setTypeface(typeface, Typeface.BOLD)
-            letterSpacing = 0.04f
+            letterSpacing = 0.03f
         }
-        head.addView(clockText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+        dateText = TextView(this).apply {
+            setTextColor(DIM)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
+            text = ""
+        }
+        col.addView(clockText)
+        col.addView(dateText)
+        head.addView(col, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
         head.addView(smallBtn("－", "收起成小圆点") {
             miniMode = true
             prefs.edit().putBoolean(KEY_MINI, true).apply()
@@ -316,36 +325,27 @@ class HudService : Service() {
         })
         p.addView(head, fullWidth())
 
-        dateText = TextView(this).apply {
-            setTextColor(DIM)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f)
-            text = ""
-        }
-        p.addView(dateText)
-
-        // 番茄钟区
+        // 番茄钟卡（浅底块）
         sessionBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            background = round(SOFT, 14f)
+            setPadding(dp(10f), dp(8f), dp(10f), dp(9f))
             visibility = View.GONE
-            setPadding(0, dp(7f), 0, dp(2f))
+            val m = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, WRAP_CONTENT,
+            )
+            m.topMargin = dp(9f)
+            layoutParams = m
         }
         val sessTop = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         sessionTime = TextView(this).apply {
-            setTextColor(ACC)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTypeface(typeface, Typeface.BOLD)
-            text = "25:00"
-        }
-        sessionBtn = TextView(this).apply {
             setTextColor(FG)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setPadding(dp(8f), dp(3f), dp(8f), dp(3f))
-            background = round(0x33FFFFFF, 9f)
-            text = "暂停"
-            setOnClickListener { HudChannel.current?.emit("toggleTimer") }
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            setTypeface(typeface, Typeface.BOLD)
+            text = "00:00"
         }
         sessionTitle = TextView(this).apply {
             setTextColor(DIM)
@@ -354,10 +354,18 @@ class HudService : Service() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             text = ""
         }
+        sessionBtn = TextView(this).apply {
+            setTextColor(ACC)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setPadding(dp(10f), dp(4f), dp(10f), dp(4f))
+            background = round(ACC_SOFT, 9f)
+            text = "暂停"
+            setOnClickListener { HudChannel.current?.emit("toggleTimer") }
+        }
         sessTop.addView(sessionTime)
         sessTop.addView(
             sessionTitle,
-            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(7f) },
+            LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(8f) },
         )
         sessTop.addView(sessionBtn)
         sessionBar = ProgressBar(
@@ -365,9 +373,11 @@ class HudService : Service() {
         ).apply {
             max = 1000
             progress = 0
+            progressTintList = android.content.res.ColorStateList.valueOf(ACC)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(LINE)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(4f),
-            ).apply { topMargin = dp(5f) }
+            ).apply { topMargin = dp(7f) }
         }
         val sbox = sessionBox
         if (sbox != null) {
@@ -376,36 +386,23 @@ class HudService : Service() {
             p.addView(sbox)
         }
 
-        // 任务列表
+        // 任务区标题
+        countText = TextView(this).apply {
+            setTextColor(FG)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+            setTypeface(typeface, Typeface.BOLD)
+            text = "今日任务"
+            setPadding(0, dp(10f), 0, dp(2f))
+        }
+        p.addView(countText, fullWidth())
         val tbox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(4f), 0, 0)
         }
         tasksBox = tbox
         p.addView(tbox)
 
-        val foot = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6f), 0, 0)
-        }
-        footText = TextView(this).apply {
-            setTextColor(DIM)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-        }
-        val addBtn = TextView(this).apply {
-            setTextColor(ACC)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
-            setPadding(dp(8f), dp(3f), dp(8f), dp(3f))
-            background = round(0x225B9CFF, 9f)
-            text = "＋ 新建"
-            setOnClickListener {
-                if (!openApp("newTask", null)) HudChannel.current?.emit("newTask")
-            }
-        }
-        foot.addView(footText, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        foot.addView(addBtn)
-        p.addView(foot)
+        // 快捷菜单
+        p.addView(actionGrid(), fullWidth())
 
         // 拖动 + 双指缩放
         dragOn(head)
@@ -413,14 +410,71 @@ class HudService : Service() {
         return p
     }
 
+    /** 两行快捷菜单，白底小方块，点一下就走对应的动作 */
+    private fun actionGrid(): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val rows = listOf(
+            listOf(
+                Triple("🍅", "专注", "openToday"),
+                Triple("✅", "打卡", "openCheckin"),
+                Triple("📝", "新建", "newTask"),
+                Triple("🗓", "课表", "openTimetable"),
+            ),
+            listOf(
+                Triple("📅", "日历", "openCalendar"),
+                Triple("🎵", "白噪", "ambience"),
+                Triple("⏱", "计时", "focusPage"),
+                Triple("⚙", "设置", "settings"),
+            ),
+        )
+        for (r in rows) {
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(6f), 0, 0)
+            }
+            for (item in r) {
+                val lp = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+                lp.setMargins(dp(2f), 0, dp(2f), 0)
+                line.addView(actionCell(item.first, item.second, item.third), lp)
+            }
+            box.addView(line, fullWidth())
+        }
+        return box
+    }
+
+    private fun actionCell(emoji: String, label: String, action: String): View {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = round(SOFT, 13f)
+            setPadding(0, dp(7f), 0, dp(6f))
+            addView(TextView(this@HudService).apply {
+                text = emoji
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                gravity = Gravity.CENTER
+            })
+            addView(TextView(this@HudService).apply {
+                text = label
+                setTextColor(DIM)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(2f), 0, 0)
+            })
+            setOnClickListener {
+                val sent = HudChannel.current?.emit(action) ?: false
+                if (!sent) openApp(action, null)
+            }
+        }
+    }
+
     private fun buildMini(): View {
         val box = FrameLayout(this).apply {
-            background = round(ACC, 22f)
+            background = card(22f)
             visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(dp(56f), dp(56f))
+            layoutParams = FrameLayout.LayoutParams(dp(58f), dp(58f))
         }
         miniClock = TextView(this).apply {
-            setTextColor(0xFF101828.toInt())
+            setTextColor(ACC)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
@@ -447,9 +501,13 @@ class HudService : Service() {
             text = label
             contentDescription = hint
             setTextColor(DIM)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = Gravity.CENTER
-            setPadding(dp(9f), dp(1f), dp(9f), dp(1f))
+            background = round(SOFT, 9f)
+            setPadding(dp(9f), dp(1f), dp(9f), dp(2f))
+            val m = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+            m.marginStart = dp(6f)
+            layoutParams = m
             setOnClickListener { onTap() }
         }
     }
@@ -546,38 +604,33 @@ class HudService : Service() {
         val box = tasksBox ?: return
         box.removeAllViews()
         val raw = prefs.getString(KEY_DATA, "") ?: ""
-        var count = 0
+        var total = 0
         var doneCount = 0
         try {
             val o = JSONObject(raw)
             val arr: JSONArray = o.optJSONArray("tasks") ?: JSONArray()
             dateText?.text = o.optString("date", "")
+            total = arr.length()
             for (i in 0 until arr.length()) {
                 val t = arr.optJSONObject(i) ?: continue
                 if (t.optBoolean("done", false)) doneCount++
             }
-            val limit = minOf(arr.length(), MAX_ROWS)
+            countText?.text = if (total == 0) "今日任务" else "今日 $doneCount/$total"
+            val limit = minOf(total, MAX_ROWS)
             for (i in 0 until limit) {
                 val t = arr.optJSONObject(i) ?: continue
-                box.addView(taskRow(t))
-                count++
-            }
-            val total = arr.length()
-            footText?.text = when {
-                total == 0 -> "今天没有任务"
-                else -> "还有 ${total - doneCount} 条 · 共 $total 条"
+                box.addView(taskRow(t), fullWidth())
             }
         } catch (_: Throwable) {
-            footText?.text = "今天没有任务"
+            countText?.text = "今日任务"
         }
-        if (count == 0) {
-            val empty = TextView(this).apply {
+        if (total == 0) {
+            box.addView(TextView(this).apply {
                 setTextColor(DIM)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                text = "点「＋ 新建」加一条"
-                setPadding(0, dp(4f), 0, dp(4f))
-            }
-            box.addView(empty)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f)
+                text = "今天没有任务，点下面 📝 加一条"
+                setPadding(0, dp(5f), 0, dp(3f))
+            })
         }
     }
 
@@ -585,15 +638,19 @@ class HudService : Service() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4f), 0, dp(4f))
+            setPadding(0, dp(6f), 0, dp(5f))
         }
         val id = t.optInt("id", -1)
         val done = t.optBoolean("done", false)
         val dot = TextView(this).apply {
-            text = if (done) "●" else "○"
-            setTextColor(if (done) OK else DIM)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setPadding(0, 0, dp(7f), 0)
+            text = if (done) "✓" else ""
+            gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+            setTextColor(0xFFFFFFFF.toInt())
+            background = dotBg(done)
+            val lp = LinearLayout.LayoutParams(dp(16f), dp(16f))
+            lp.marginEnd = dp(8f)
+            layoutParams = lp
             setOnClickListener {
                 if (done) {
                     HudChannel.current?.emit("alreadyDone")
@@ -611,6 +668,9 @@ class HudService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
+            if (done) {
+                paintFlags = paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG
+            }
         }
         val whenText = TextView(this).apply {
             text = t.optString("time", "")
@@ -707,4 +767,19 @@ class HudService : Service() {
             false
         }
     }
+
+    /** 白底卡片：圆角 + 淡描边 */
+    private fun card(radius: Float = 20f): GradientDrawable =
+        GradientDrawable().apply {
+            setColor(BG)
+            cornerRadius = dp(radius).toFloat()
+            setStroke(dp(1f), LINE)
+        }
+
+    private fun dotBg(done: Boolean): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(if (done) OK else SOFT)
+            setStroke(dp(1.2f), if (done) OK else LINE)
+        }
 }
