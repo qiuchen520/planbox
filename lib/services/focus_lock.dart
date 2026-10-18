@@ -77,6 +77,8 @@ class FocusLock {
   static Future<void> stop() => _call<bool>('stop');
 
   static Future<bool> isRunning() async => await _call<bool>('isRunning') ?? false;
+  /// 上次长按幕布紧急退出的时间戳（毫秒），0 表示没有过
+  static Future<int> emergencyAt() async => await _call<int>('emergencyAt') ?? 0;
 
   /// 自检：服务在不在跑、权限到底认不认、最近看到的前台是哪个
   static Future<Map<String, dynamic>> diag() async {

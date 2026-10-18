@@ -56,6 +56,7 @@ class FocusChannel(
                     }
                     "isRunning" -> result.success(OverlayService.running)
                     "diag" -> result.success(diag())
+                    "emergencyAt" -> result.success(emergencyAt())
                     "ignoringBattery" -> result.success(isIgnoringBattery())
                     "openBattery" -> {
                         openBatterySettings()
@@ -84,6 +85,14 @@ class FocusChannel(
     /**
      * 自检快照：把“服务到底卡在哪一步”摊开给 Flutter 侧看。
      */
+    /** 上次长按紧急退出的时间戳（毫秒），0 表示没有过 */
+    private fun emergencyAt(): Long = try {
+        ctx.getSharedPreferences(OverlayService.PREFS, Context.MODE_PRIVATE)
+            .getLong(OverlayService.KEY_EMERGENCY_AT, 0L)
+    } catch (_: Throwable) {
+        0L
+    }
+
     private fun diag(): Map<String, Any?> = mapOf(
         "running" to OverlayService.running,
         "usage" to FocusPerms.hasUsage(ctx),

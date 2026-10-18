@@ -58,6 +58,8 @@ class OverlayService : Service() {
         const val PREFS = "planbox_focus"
         const val KEY_WHITELIST = "whitelist"
         const val KEY_PAUSE_UNTIL = "pause_until"
+        /** 长按紧急退出的时间戳。Flutter 侧靠它区分「自己退的」和「被人强杀的」 */
+        const val KEY_EMERGENCY_AT = "emergency_at"
 
         /** 给 Flutter 侧查进程是否还活着 */
         @Volatile
@@ -514,6 +516,7 @@ class OverlayService : Service() {
         try {
             getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                 .putLong(KEY_PAUSE_UNTIL, System.currentTimeMillis() + 10 * 60_000L)
+                .putLong(KEY_EMERGENCY_AT, System.currentTimeMillis())
                 .apply()
         } catch (_: Throwable) {
             // ignore

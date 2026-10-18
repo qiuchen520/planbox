@@ -3,8 +3,9 @@ import 'package:just_audio/just_audio.dart';
 
 /// 专注时播放的循环环境音。
 ///
-/// 音频是用 tools/gen_ambience.py 现算出来的（三个 6 秒的循环 WAV），
-/// 加起来不到 1MB，不依赖网络，也不带任何第三方素材的版权问题。
+/// 三个循环 WAV 由 tools/gen_ambience.py 处理维基共享资源的公有领域录音得到，
+/// 已做循环接缝交叉淡化 + RMS 归一，见 docs/ambience-credits.md。
+/// 不依赖网络，也不涉及署名或再分发限制。
 enum NoiseKind { none, white, pink, rain }
 
 extension NoiseKindX on NoiseKind {

@@ -143,6 +143,16 @@ class FocusGuard {
       return null;
     }
 
+    // 长按幕布紧急退出是设计好的正规出口，不能算「偷跑」。
+    // 原生落过时间戳，只要这轮开始时间不晚于它，就认这轮是主动结束的。
+    final emergencyAt = await FocusLock.emergencyAt();
+    if (emergencyAt > 0 &&
+        DateTime.now().millisecondsSinceEpoch - emergencyAt < 6 * 3600 * 1000 &&
+        (at == 0 || emergencyAt >= at)) {
+      await DB.i.setSetting(_kActive, '0');
+      await DB.i.setSetting(_kViolation, '');
+      return null;
+    }
     if (await FocusLock.isRunning()) return null;
 
     final usage = await FocusLock.canUsage();
