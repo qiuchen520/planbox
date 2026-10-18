@@ -9,6 +9,7 @@ import '../services/backup.dart';
 import '../services/notify.dart';
 import '../theme.dart';
 import 'agreement.dart';
+import 'update_dialog.dart';
 
 class SettingsPage extends StatefulWidget {
   SettingsPage({super.key});
@@ -597,7 +598,9 @@ class _SettingsPageState extends State<SettingsPage> {
               ListTile(
                 leading: Icon(Icons.info_outline),
                 title: Text('版本'),
-                subtitle: Text('v${About.version} · 构建号见安装包'),
+                subtitle: Text('v${About.version} · 点一下去 GitHub 看看有没有新版'),
+                trailing: Icon(Icons.chevron_right, color: kFaint),
+                onTap: () => UpdateDialog.show(context),
               ),
             ],
           ),

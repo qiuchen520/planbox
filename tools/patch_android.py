@@ -30,6 +30,8 @@ PERMISSIONS = [
     "android.permission.SYSTEM_ALERT_WINDOW",
     "android.permission.FOREGROUND_SERVICE",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+    # 检查更新下完要拉起系统安装器，Android 8 起必须有这个
+    "android.permission.REQUEST_INSTALL_PACKAGES",
 ]
 
 # 专注守护的前台服务声明（Android 14 起必须写清 foregroundServiceType）
@@ -50,6 +52,25 @@ QUERIES_XML = """    <queries>
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
+"""
+
+# 更新包下到 getExternalFilesDir(Download)，通过 FileProvider 交给安装器
+FILE_PATHS_XML = """<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-files-path name="dl" path="." />
+    <files-path name="files" path="." />
+</paths>
+"""
+
+PROVIDER_XML = """    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="${applicationId}.fileprovider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+        <meta-data
+            android:name="android.support.FILE_PROVIDER_PATHS"
+            android:resource="@xml/file_paths" />
+    </provider>
 """
 
 DESUGAR_LIB = "com.android.tools:desugar_jdk_libs:2.1.4"
@@ -79,7 +100,14 @@ def patch_manifest() -> None:
     # 专注守护的前台服务
     if 'android:name=".OverlayService"' not in text:
         text = text.replace("</application>", SERVICE_XML + "</application>", 1)
+    # 更新包安装走的 FileProvider
+    if "androidx.core.content.FileProvider" not in text:
+        text = text.replace("</application>", PROVIDER_XML + "</application>", 1)
     MANIFEST.write_text(text, encoding="utf-8")
+    # FileProvider 的可见路径表
+    xml_dir = APP / "src" / "main" / "res" / "xml"
+    xml_dir.mkdir(parents=True, exist_ok=True)
+    (xml_dir / "file_paths.xml").write_text(FILE_PATHS_XML, encoding="utf-8")
     print("manifest 已处理，新增权限：%s" % (", ".join(missing) or "无"))
 
 
@@ -95,6 +123,7 @@ def _patch_kts(path: pathlib.Path) -> None:
         s += (
             "\n\ndependencies {\n"
             '    coreLibraryDesugaring("%s")\n'
+            '    implementation("androidx.core:core:1.13.1")\n'
             "}\n" % DESUGAR_LIB
         )
     path.write_text(s, encoding="utf-8")
@@ -109,7 +138,7 @@ def _patch_groovy(path: pathlib.Path) -> None:
             1,
         )
     if "coreLibraryDesugaring" not in s:
-        s += "\n\ndependencies {\n    coreLibraryDesugaring '%s'\n}\n" % DESUGAR_LIB
+        s += "\n\ndependencies {\n    coreLibraryDesugaring '%s'\n    implementation 'androidx.core:core:1.13.1'\n}\n" % DESUGAR_LIB
     path.write_text(s, encoding="utf-8")
 
 
