@@ -599,6 +599,7 @@ class _FocusPageState extends State<FocusPage>
               ],
             ),
           ),
+          // 权限入口（开关在底部那排 chip 里，这里只管去授权）
           IconButton(
             icon: Icon(
               _guardOn
@@ -608,9 +609,11 @@ class _FocusPageState extends State<FocusPage>
               color: _guardOn ? kAcc : kDim,
             ),
             tooltip: _guardOn
-                ? '守护中（点关掉）'
-                : (_guardPref ? '守护开着但没生效（点重试）' : '守护已关（点开启）'),
-            onPressed: () => unawaited(_toggleGuard()),
+                ? '守护中（点查权限）'
+                : (_guardPref
+                    ? '守护开着但缺权限（点去授权）'
+                    : '守护已关（点查权限；开关在底部）'),
+            onPressed: () => PermissionPage.open(context),
           ),
           IconButton(
             icon: Icon(Icons.playlist_add_check, color: kDim, size: 20),
