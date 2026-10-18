@@ -118,7 +118,52 @@ def patch_gradle_properties() -> None:
     print("gradle.properties 已放宽 Kotlin jvm target 校验")
 
 
+def patch_icon() -> None:
+    """把仓库里的 assets/icon/* 拷进生成的 res/，并写自适应图标描述。
+
+    仓库不存 android/ 目录，所以图标只能在构建时灌进去。
+    """
+    src_root = ROOT / "assets" / "icon"
+    if not src_root.is_dir():
+        print("没有 assets/icon，跳过图标（先用 flutter 默认图标）")
+        return
+    res = APP / "src" / "main" / "res"
+    copied = 0
+    for dens_dir in src_root.iterdir():
+        if not dens_dir.is_dir() or not dens_dir.name.startswith("mipmap-"):
+            continue
+        dst = res / dens_dir.name
+        dst.mkdir(parents=True, exist_ok=True)
+        for f in dens_dir.iterdir():
+            if f.suffix.lower() == ".png":
+                (dst / f.name).write_bytes(f.read_bytes())
+                copied += 1
+    # 自适应图标：背景色 + 前景图
+    colors = res / "values" / "colors.xml"
+    colors.parent.mkdir(parents=True, exist_ok=True)
+    if not colors.exists():
+        colors.write_text(
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            "<resources>\n"
+            '    <color name="ic_launcher_background">#5B9CFF</color>\n'
+            "</resources>\n",
+            encoding="utf-8",
+        )
+    anydpi = res / "mipmap-anydpi-v26"
+    anydpi.mkdir(parents=True, exist_ok=True)
+    (anydpi / "ic_launcher.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
+        '    <background android:drawable="@color/ic_launcher_background"/>\n'
+        '    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n'
+        "</adaptive-icon>\n",
+        encoding="utf-8",
+    )
+    print("图标已安装：%d 个 png + 1 个 adaptive-icon" % copied)
+
+
 if __name__ == "__main__":
     patch_manifest()
     patch_gradle()
     patch_gradle_properties()
+    patch_icon()
