@@ -70,17 +70,23 @@ class UpdateChecker {
   /// 有新版返回信息，没有新版（或压根没网）返回 null。
   /// [error] 只在「本该成功却失败」时调用，用来区分「已是最新」。
   static Future<UpdateInfo?> latest({void Function(String)? error}) async {
-    String? tag = await _latestTagFrom(
+    // 先问 releases/latest（会 302 到 /releases/tag/<tag>）；
+    // 万一仓库里最新那条被标成了 prerelease，latest 会 404，
+    // 那就退一步去 releases 列表页抓第一条 —— 页面里的链接格式完全一样。
+    final pages = <String>[
       'https://github.com/$_repo/releases/latest',
-    );
-    if (tag == null) {
-      // 直连被墙时，借用加速器去取那个 302
+      'https://github.com/$_repo/releases',
+    ];
+    String? tag;
+    for (final page in pages) {
+      tag = await _latestTagFrom(page);
+      if (tag != null) break;
+      // 直连被墙时，借用加速器去取同一个页面
       for (final p in _mirrorPrefix.values) {
-        tag = await _latestTagFrom(
-          '${p}https://github.com/$_repo/releases/latest',
-        );
+        tag = await _latestTagFrom('$p$page');
         if (tag != null) break;
       }
+      if (tag != null) break;
     }
 
     if (tag == null) {
@@ -189,17 +195,28 @@ class UpdateChecker {
     }
   }
 
-  /// 从任意文本里找出 `/releases/tag/<tag>` 里的 tag
+  /// 从任意文本里找出**版本最高**的那个 tag。
+  /// 列表页上会出现好几个版本，按版本号比一遍，别被页面上别的链接带偏。
   static String? _tagFromText(String text) {
-    final i = text.indexOf('/releases/tag/');
-    if (i < 0) return null;
-    var rest = text.substring(i + '/releases/tag/'.length);
-    for (final stop in ['"', "'", ' ', '\n', '\r', '?', '#', '<']) {
-      final j = rest.indexOf(stop);
-      if (j >= 0) rest = rest.substring(0, j);
+    String? best;
+    var from = 0;
+    while (true) {
+      final i = text.indexOf('/releases/tag/', from);
+      if (i < 0) break;
+      from = i + '/releases/tag/'.length;
+      var rest = text.substring(from);
+      for (final stop in ['"', "'", ' ', '\n', '\r', '?', '#', '<']) {
+        final j = rest.indexOf(stop);
+        if (j >= 0) rest = rest.substring(0, j);
+      }
+      final tag = Uri.decodeComponent(rest.trim());
+      if (tag.isEmpty) continue;
+      final v = _parseVersion(tag);
+      if (v == null) continue;
+      final bv = best == null ? null : _parseVersion(best);
+      if (best == null || bv == null || _compare(v, bv) > 0) best = tag;
     }
-    rest = Uri.decodeComponent(rest.trim());
-    return rest.isEmpty ? null : rest;
+    return best;
   }
 
   /// DNS over HTTPS：本地 DNS 不给答案时用，绕开污染。
