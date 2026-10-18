@@ -9,7 +9,9 @@ import '../data/db.dart';
 import '../models.dart';
 import '../palette.dart';
 import '../services/ambience.dart';
+import '../services/focus_guard.dart';
 import '../theme.dart';
+import 'whitelist_page.dart';
 
 /// 番茄钟 / 专注倒计时。
 ///
@@ -45,6 +47,8 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
   int _totalSec = 0; // 0 = 还没定时长
   int _remainSec = 0;
   bool _running = false;
+  /// 这一轮是否已经把「专注守护」点着了（暂停/继续不重复拉起）
+  bool _guardOn = false;
 
   bool get _hasPlan => _totalSec > 0;
   double get _progress => _totalSec == 0
@@ -69,6 +73,8 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
     _bg.dispose();
     // 离开页面就别让噪音一直响着
     Ambience.i.stop();
+    // 正常离开 = 这一轮结束。不清标记的话，下次启动会被当成「偷跑」
+    if (_guardOn) unawaited(FocusGuard.end());
     super.dispose();
   }
 
@@ -78,6 +84,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
     if (_remainSec <= 0) _remainSec = _totalSec;
     setState(() => _running = true);
     Ambience.i.resume();
+    unawaited(_ensureGuard());
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_remainSec <= 1) {
@@ -97,6 +104,53 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
     _ticker?.cancel();
     Ambience.i.pause();
     setState(() => _running = false);
+  }
+
+  /// 把原生守护点起来。权限不齐就先问一句，不强行开始。
+  Future<void> _ensureGuard() async {
+    if (_guardOn) return;
+    final minutes = _totalSec ~/ 60;
+    if (await FocusGuard.begin(minutes)) {
+      if (mounted) setState(() => _guardOn = true);
+      return;
+    }
+    if (!mounted) return;
+    await _askPermissions();
+    // 用户补完权限回来，再试一次
+    if (!mounted) return;
+    if (await FocusGuard.hasAllPermissions()) {
+      if (await FocusGuard.begin(minutes) && mounted) {
+        setState(() => _guardOn = true);
+      }
+    }
+  }
+
+  Future<void> _askPermissions() async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kCard,
+        title: Text('开启专注守护？', style: TextStyle(color: kFg)),
+        content: Text(
+          '守护需要两个系统权限：\n'
+          '· 使用情况访问 —— 才知道你切到了哪个应用\n'
+          '· 显示在其他应用上层 —— 才能在跑神时盖一层提醒\n\n'
+          '不授权也能用番茄钟，只是拦不住你切走。',
+          style: TextStyle(color: kDim, height: 1.6, fontSize: 12.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('先不用', style: TextStyle(color: kDim)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('去开启', style: TextStyle(color: kAcc)),
+          ),
+        ],
+      ),
+    );
+    if (go == true) await FocusGuard.openPermissionFlow();
   }
 
   void _reset() {
@@ -347,6 +401,16 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
                   ),
               ],
             ),
+          ),
+          if (_guardOn)
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Icon(Icons.shield, size: 15, color: kAcc),
+            ),
+          IconButton(
+            icon: Icon(Icons.playlist_add_check, color: kDim, size: 20),
+            tooltip: '专注白名单',
+            onPressed: () => WhitelistPage.open(context),
           ),
         ],
       ),

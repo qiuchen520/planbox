@@ -6,7 +6,9 @@ import 'package:flutter/services.dart';
 import 'data/db.dart';
 import 'pages/agreement.dart';
 import 'pages/home_shell.dart';
+import 'pages/penalty_page.dart';
 import 'palette.dart';
+import 'services/focus_guard.dart';
 import 'services/notify.dart';
 import 'theme.dart';
 
@@ -53,12 +55,17 @@ class PlanBoxApp extends StatefulWidget {
 
 class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
   Timer? _hideTimer;
+  final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+  /// 惩罚页正在显示时不要再叠加一层
+  bool _penaltyShowing = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _enterImmersive();
+    // 启动时先看一眼上一轮是不是被偷跑了
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkViolation());
   }
 
   @override
@@ -71,7 +78,11 @@ class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
   /// 弹过输入法、从后台切回来之后，部分系统会把状态栏又放出来，这里补一刀。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _enterImmersive();
+    if (state == AppLifecycleState.resumed) {
+      _enterImmersive();
+      // 从后台回来也查一次：被杀过 / 撤过权限的话，这里就能发现
+      _checkViolation();
+    }
   }
 
   /// 关键：immersiveSticky 在不少国产 ROM（读书郎这类定制系统尤其如此）上下滑唤出后会
@@ -91,12 +102,30 @@ class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
     }
   }
 
+  /// 检测上一轮专注是否被「偷跑」：服务没了 = 被杀，权限没了 = 被撤。
+  Future<void> _checkViolation() async {
+    if (_penaltyShowing || !mounted) return;
+    String? reason = await FocusGuard.pollViolation();
+    if (!mounted) return;
+    if (reason == null || reason.isEmpty) {
+      final pending = await FocusGuard.pendingViolation();
+      if (pending != null && pending.isNotEmpty) reason = pending;
+    }
+    if (reason == null || reason.isEmpty) return;
+    final ctx = _navKey.currentState?.context;
+    if (ctx == null) return;
+    _penaltyShowing = true;
+    await PenaltyPage.show(ctx, reason);
+    _penaltyShowing = false;
+  }
+
   @override
   Widget build(BuildContext context) {
     // 配色变化时重建 MaterialApp，让 theme 重新生成
     return ValueListenableBuilder<int>(
       valueListenable: Pal.rev,
       builder: (context, _, __) => MaterialApp(
+        navigatorKey: _navKey,
         title: 'PlanBox',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),

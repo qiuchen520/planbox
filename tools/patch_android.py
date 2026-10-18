@@ -18,13 +18,38 @@ APP = ROOT / "android" / "app"
 MANIFEST = APP / "src" / "main" / "AndroidManifest.xml"
 
 # 通知要用到的权限：发通知 / 震动 / 开机后恢复闹钟 / 精确闹钟
+# 专注守护额外要：读前台应用（使用情况访问）、盖在别的应用上层（悬浮窗）、前台服务
 PERMISSIONS = [
     "android.permission.POST_NOTIFICATIONS",
     "android.permission.VIBRATE",
     "android.permission.RECEIVE_BOOT_COMPLETED",
     "android.permission.SCHEDULE_EXACT_ALARM",
     "android.permission.WAKE_LOCK",
+    "android.permission.PACKAGE_USAGE_STATS",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
 ]
+
+# 专注守护的前台服务声明（Android 14 起必须写清 foregroundServiceType）
+SERVICE_XML = """    <service
+        android:name=".OverlayService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="focus_guard" />
+    </service>
+"""
+
+# Android 11+ 的包可见性：不声明这条，白名单里读不到已安装应用
+QUERIES_XML = """    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+"""
 
 DESUGAR_LIB = "com.android.tools:desugar_jdk_libs:2.1.4"
 
@@ -47,7 +72,12 @@ def patch_manifest() -> None:
         if "<application" not in text:
             sys.exit("AndroidManifest.xml 里没有 <application>，结构异常")
         text = text.replace("<application", block + "    <application", 1)
-
+    # 包可见性（白名单要列出已安装应用）
+    if "<queries>" not in text:
+        text = text.replace("<application", QUERIES_XML + "    <application", 1)
+    # 专注守护的前台服务
+    if 'android:name=".OverlayService"' not in text:
+        text = text.replace("</application>", SERVICE_XML + "</application>", 1)
     MANIFEST.write_text(text, encoding="utf-8")
     print("manifest 已处理，新增权限：%s" % (", ".join(missing) or "无"))
 
@@ -162,8 +192,28 @@ def patch_icon() -> None:
     print("图标已安装：%d 个 png + 1 个 adaptive-icon" % copied)
 
 
+def patch_native() -> None:
+    """把 android_src/ 里的 Kotlin 源码灌进生成的 android/ 工程。
+
+    仓库不保存 android/（每次构建 flutter create 现生成），所以
+    MainActivity 也要一起覆盖 —— flutter create 生成的那份没有 Channels 注册。
+    """
+    src = ROOT / "android_src"
+    if not src.is_dir():
+        print("没有 android_src，跳过原生代码（专注锁不会生效）")
+        return
+    dst = APP / "src" / "main" / "kotlin" / "top" / "planbox"
+    dst.mkdir(parents=True, exist_ok=True)
+    names = []
+    for f in sorted(src.glob("*.kt")):
+        (dst / f.name).write_bytes(f.read_bytes())
+        names.append(f.name)
+    print("原生代码已写入：%s" % ", ".join(names))
+
+
 if __name__ == "__main__":
     patch_manifest()
+    patch_native()
     patch_gradle()
     patch_gradle_properties()
     patch_icon()
