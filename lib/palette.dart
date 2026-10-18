@@ -146,9 +146,16 @@ class Pal {
     final a = int.tryParse(await DB.i.getSetting('accent_idx') ?? '0') ?? 0;
     final s = int.tryParse(await DB.i.getSetting('subject_idx') ?? '0') ?? 0;
     final d = await DB.i.getSetting('dark_mode') ?? '1';
-    accIdx = a.clamp(0, kAccentPresets.length - 1);
-    subIdx = s.clamp(0, kSubjectPresets.length - 1);
+    final na = a.clamp(0, kAccentPresets.length - 1);
+    final ns = s.clamp(0, kSubjectPresets.length - 1);
+    // 老版本这里直接把值赋进去就完事，结果恢复备份后「明暗」悄悄变了、
+    // 界面却没收到通知，出现「白底配黑格子」的半深半浅中间态。
+    // 所以这里必须先判断有没有变，变了才 rev++。
+    final changed = na != accIdx || ns != subIdx || (d != '0') != dark;
+    accIdx = na;
+    subIdx = ns;
     dark = d != '0';
+    if (changed) rev.value++;
   }
 
   /// 切换明暗模式
