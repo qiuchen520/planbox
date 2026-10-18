@@ -13,7 +13,7 @@ class About {
   static const qqGroup = '860358771';
   static const repo = 'github.com/qiuchen520/planbox';
   static const license = 'GPL-3.0';
-  static const version = '1.0.0';
+  static const version = '1.0.1';
 }
 
 /// 协议版本号。以后改了协议正文就 +1，老用户会重新看到一次确认。

@@ -596,9 +596,18 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               Divider(height: 1),
               ListTile(
+                leading: Icon(Icons.star_border, color: kAcc),
+                title: Text('给个 Star ⭐'),
+                subtitle: Text('github.com/qiuchen520/planbox · 点一下复制地址'),
+                onTap: () => _copy('仓库地址', 'https://github.com/qiuchen520/planbox'),
+              ),
+              Divider(height: 1),
+              ListTile(
                 leading: Icon(Icons.info_outline),
                 title: Text('版本'),
-                subtitle: Text('v${About.version} · 点一下去 GitHub 看看有没有新版'),
+                subtitle: Text(
+                  'v${About.version} · 每天启动自动检查，也可以点这里手动看',
+                ),
                 trailing: Icon(Icons.chevron_right, color: kFaint),
                 onTap: () => UpdateDialog.show(context),
               ),

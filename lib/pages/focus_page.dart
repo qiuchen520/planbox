@@ -114,7 +114,13 @@ class _FocusPageState extends State<FocusPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 从后台回来时按墙钟把剩余时间对齐一次，别停在旧数字上
+    if (state == AppLifecycleState.paused) {
+      // 退到后台就别再跑那张背景光晕了，省电也省内存
+      _bg.stop();
+      return;
+    }
     if (state == AppLifecycleState.resumed) {
+      if (!_bg.isAnimating) _bg.repeat();
       if (_running) setState(_syncRemain);
       // 回前台重读一次：悬浮窗可能在别处被关掉了
       unawaited(_loadPrefs());

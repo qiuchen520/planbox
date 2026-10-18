@@ -9,6 +9,8 @@ import 'pages/agreement.dart';
 import 'pages/focus_page.dart';
 import 'pages/home_shell.dart';
 import 'pages/penalty_page.dart';
+import 'pages/update_dialog.dart';
+import 'services/update_checker.dart';
 import 'palette.dart';
 import 'services/focus_guard.dart';
 import 'services/ambience.dart';
@@ -45,6 +47,10 @@ Future<void> main() async {
   Hud.init();
   Hud.onAction = (action, taskId) => _hudAction(action, taskId);
   unawaited(_bootHud());
+  // 后台悄悄看一眼云端有没有新版：一天最多一次，没有就什么都不弹
+  unawaited(_autoUpdate());
+  // 用了几次之后轻轻问一句要不要给个 Star
+  unawaited(_maybeStar());
   runApp(PlanBoxApp());
 }
 
@@ -148,6 +154,66 @@ Future<void> _hudAction(String action, int taskId) async {
       await DB.i.setSetting(Hud.settingKey, '0');
       if (ctx != null) _hudToast(ctx, '悬浮窗已关掉，需要时点番茄钟左上角再开');
       break;
+  }
+}
+
+/// 自动检查更新：每天第一次启动时静默比对云端版本，有新版才弹窗
+Future<void> _autoUpdate() async {
+  final nav = _appNav;
+  if (nav == null) return;
+  try {
+    final now = DateTime.now();
+    final today = '${now.year}-${now.month}-${now.day}';
+    final last = await DB.i.getSetting('update_checked');
+    if (last == today) return;
+    await DB.i.setSetting('update_checked', today);
+    // 等首屏铺好再说话，别一进来就盖住
+    await Future<void>.delayed(const Duration(seconds: 3));
+    final info = await UpdateChecker.latest();
+    if (info == null) return;
+    final ctx = nav.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    await UpdateDialog.show(ctx);
+  } catch (_) {
+    // 网络差、被墙、解析不了都算「今天先不更新」，不打扰
+  }
+}
+
+/// 求 Star：第 5 次打开、且从没问过，右下角飘一条 8 秒自动走的提示
+Future<void> _maybeStar() async {
+  try {
+    final n = (int.tryParse(await DB.i.getSetting('open_count') ?? '') ?? 0) + 1;
+    await DB.i.setSetting('open_count', '$n');
+    if (n < 5) return;
+    if ((await DB.i.getSetting('star_prompted')) == '1') return;
+    await DB.i.setSetting('star_prompted', '1');
+    await Future<void>.delayed(const Duration(seconds: 5));
+    final ctx = _appNav?.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    final m = ScaffoldMessenger.maybeOf(ctx);
+    m?.clearSnackBars();
+    m?.showSnackBar(
+      SnackBar(
+        content: const Text('用着还顺手的话，给个 Star ⭐ 呗'),
+        duration: const Duration(seconds: 8),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(
+          label: '复制仓库地址',
+          onPressed: () async {
+            await Clipboard.setData(
+              const ClipboardData(text: 'https://github.com/qiuchen520/planbox'),
+            );
+            if (ctx.mounted) {
+              ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(
+                const SnackBar(content: Text('链接已复制，粘到浏览器就能打开')),
+              );
+            }
+          },
+        ),
+      ),
+    );
+  } catch (_) {
+    // 提示本身不重要，失败就算了
   }
 }
 

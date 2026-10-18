@@ -404,6 +404,33 @@ class OverlayService : Service() {
 
     // ── 幕布 ─────────────────────────────────────────────
 
+    /**
+     * 按包名挑一句吐槽。用户原话：「检测到是 b 站就提醒竟敢去看」。
+     * 第一条是标题，第二条是副标题（%s 会替换成应用名）。
+     */
+    private fun scoldFor(pkg: String): Pair<String, String> {
+        return when {
+            pkg == "tv.danmaku.bili" || pkg == "com.bilibili.app.in" ->
+                Pair("B 站？作业写完了吗", "检测到你在「%s」\n这一轮专注还没结束")
+            pkg == "com.ss.android.ugc.aweme" ||
+                pkg == "com.ss.android.ugc.aweme.lite" ->
+                Pair("一刷就是俩小时", "「%s」的推荐算法比你更懂你\n回去学习")
+            pkg == "com.tencent.tmgp.sgame" ||
+                pkg == "com.tencent.tmgp.pubgmhd" ||
+                pkg == "com.miHoYo.Yuanshen" ->
+                Pair("这一局不能等会儿", "「%s」什么时候都能打\n番茄钟这会儿不能")
+            pkg == "com.taobao.taobao" ||
+                pkg == "com.xunmeng.pinduoduo" ||
+                pkg == "com.jingdong.app.mall" ->
+                Pair("购物车不会跑", "「%s」先放着\n先把这一轮做完")
+            pkg == "com.tencent.mm" || pkg == "com.tencent.mobileqq" ->
+                Pair("消息没有那么急", "「%s」里没人真的在等你\n专注完再看")
+            pkg == "com.ss.android.ugc.aweme.shortvideo" ->
+                Pair("短视频先关掉", "「%s」等你写完再刷")
+            else -> Pair("回去学习", "检测到你在「%s」\n这一轮专注还没结束")
+        }
+    }
+
     private fun showOverlay(badPkg: String) {
         if (overlay != null) return
         val root = LinearLayout(this).apply {
@@ -416,7 +443,7 @@ class OverlayService : Service() {
         }
         root.addView(
             TextView(this).apply {
-                text = "回去学习"
+                text = scoldFor(badPkg).first
                 setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 34f)
                 typeface = Typeface.DEFAULT_BOLD
@@ -425,7 +452,9 @@ class OverlayService : Service() {
         )
         root.addView(
             TextView(this).apply {
-                text = "检测到你在「${appLabel(badPkg)}」\n这一轮专注还没结束"
+                text = scoldFor(badPkg).second.replace(
+                    "%s", appLabel(badPkg),
+                )
                 setTextColor(Color.parseColor("#99FFFFFF"))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                 gravity = Gravity.CENTER

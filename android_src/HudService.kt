@@ -59,15 +59,17 @@ class HudService : Service() {
         const val ACTION_START = "top.planbox.HUD_START"
         const val ACTION_STOP = "top.planbox.HUD_STOP"
 
-        // ── 浅色（白）主题 ──
-    private val BG = 0xFFFFFFFF.toInt()      // 卡片底
-    private val FG = 0xFF0F172A.toInt()      // 主文字
-    private val DIM = 0xFF7C8798.toInt()     // 次文字
-    private val LINE = 0xFFE7EBF1.toInt()    // 描边
-    private val SOFT = 0xFFF3F6FA.toInt()    // 浅底块
-    private val ACC = 0xFF5B9CFF.toInt()     // 主色
-    private val ACC_SOFT = 0x1A5B9CFF       // 主色淡底
-    private val OK = 0xFF22B07D.toInt()      // 已完成
+        /** 是否跟随 App 的深色主题（Dart 每次下发都带，变了就重建） */
+    @Volatile
+    private var dark = false
+    private val BG: Int get() = if (dark) 0xFF1B1F27.toInt() else 0xFFFFFFFF.toInt()
+    private val FG: Int get() = if (dark) 0xFFE9ECF2.toInt() else 0xFF0F172A.toInt()
+    private val DIM: Int get() = if (dark) 0xFF98A2B3.toInt() else 0xFF7C8798.toInt()
+    private val LINE: Int get() = if (dark) 0xFF2A303A.toInt() else 0xFFE7EBF1.toInt()
+    private val SOFT: Int get() = if (dark) 0xFF232830.toInt() else 0xFFF3F6FA.toInt()
+    private val ACC = 0xFF5B9CFF.toInt()
+    private val ACC_SOFT = 0x1A5B9CFF
+    private val OK = 0xFF22B07D.toInt()
 
     var running: Boolean = false
             private set
@@ -255,11 +257,22 @@ class HudService : Service() {
 
     private fun build() {
         val fl = FrameLayout(this)
-        fl.addView(buildPanel())
-        fl.addView(buildMini())
-
-        val x = prefs.getInt(KEY_X, dp(12f))
-        val y = prefs.getInt(KEY_Y, dp(90f))
+        // 把手 + 面板并排：收起时只剩把手，窗口就很窄，几乎不挡视线
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        row.addView(
+            buildMini(),
+            LinearLayout.LayoutParams(dp(40f), dp(66f)),
+        )
+        row.addView(
+            buildPanel(),
+            LinearLayout.LayoutParams(panelWidth(), WRAP_CONTENT),
+        )
+        fl.addView(row)
+        val x = prefs.getInt(KEY_X, 0)
+        val y = prefs.getInt(KEY_Y, dp(150f))
         val params = WindowManager.LayoutParams(
             WRAP_CONTENT,
             WRAP_CONTENT,
@@ -286,12 +299,40 @@ class HudService : Service() {
         }
     }
 
+    /** 主题变了就地重建一遍，别让面板停在旧配色上 */
+    private fun rebuild() {
+        val r = root ?: return
+        try {
+            wm.removeView(r)
+        } catch (_: Throwable) {
+            // ignore
+        }
+        root = null
+        panel = null
+        mini = null
+        clockText = null
+        dateText = null
+        countText = null
+        sessionTitle = null
+        sessionTime = null
+        sessionBtn = null
+        sessionBar = null
+        sessionBox = null
+        tasksBox = null
+        miniClock = null
+        build()
+        applyData()
+        applySession()
+        applyMode()
+        applyScale()
+    }
+
     private fun buildPanel(): View {
         val p = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = card()
             setPadding(dp(14f), dp(11f), dp(14f), dp(12f))
-            layoutParams = FrameLayout.LayoutParams(panelWidth(), WRAP_CONTENT)
+            layoutParams = LinearLayout.LayoutParams(panelWidth(), WRAP_CONTENT)
         }
         // 头部：时钟 + 日期 + 收起 / 关闭
         val head = LinearLayout(this).apply {
@@ -468,18 +509,19 @@ class HudService : Service() {
         }
     }
 
+    /** 侧边把手：贴边一个窄条，点一下展开面板 */
     private fun buildMini(): View {
         val box = FrameLayout(this).apply {
-            background = card(22f)
-            visibility = View.GONE
-            layoutParams = FrameLayout.LayoutParams(dp(58f), dp(58f))
+            background = card(18f)
+            visibility = View.VISIBLE
         }
         miniClock = TextView(this).apply {
             setTextColor(ACC)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f)
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
-            text = "00:00"
+            text = "⏱"
+            lineSpacing(dp(2f).toFloat(), 1f)
         }
         box.addView(
             miniClock,
@@ -489,8 +531,8 @@ class HudService : Service() {
             ),
         )
         box.setOnClickListener {
-            miniMode = false
-            prefs.edit().putBoolean(KEY_MINI, false).apply()
+            miniMode = !miniMode
+            prefs.edit().putBoolean(KEY_MINI, miniMode).apply()
             applyMode()
         }
         dragOn(box)
@@ -582,7 +624,26 @@ class HudService : Service() {
 
     private fun applyMode() {
         panel?.visibility = if (miniMode) View.GONE else View.VISIBLE
-        mini?.visibility = if (miniMode) View.VISIBLE else View.GONE
+        mini?.visibility = View.VISIBLE
+        clampOnScreen()
+    }
+
+    /** 展开后面板往右长，贴着右边拖的话会顶出屏幕，这里拉回来 */
+    private fun clampOnScreen() {
+        val params = lp ?: return
+        val sw = resources.displayMetrics.widthPixels
+        val w = if (miniMode) dp(40f) else dp(40f) + panelWidth()
+        var x = params.x
+        if (x + w > sw) x = (sw - w).coerceAtLeast(0)
+        if (x < 0) x = 0
+        if (x != params.x) {
+            params.x = x
+            try {
+                root?.let { wm.updateViewLayout(it, params) }
+            } catch (_: Throwable) {
+                // ignore
+            }
+        }
     }
 
     fun rebring() {
@@ -603,8 +664,20 @@ class HudService : Service() {
     // ── 数据渲染 ──────────────────────────────────────────
     fun applyData() {
         val box = tasksBox ?: return
-        box.removeAllViews()
         val raw = prefs.getString(KEY_DATA, "") ?: ""
+        // 跟随 App 的明暗主题：变了就整块重建一次
+        var wantDark = dark
+        try {
+            wantDark = JSONObject(raw).optInt("dark", 0) == 1
+        } catch (_: Throwable) {
+            // 数据坏了就沿用旧主题
+        }
+        if (wantDark != dark) {
+            dark = wantDark
+            rebuild()
+            return
+        }
+        box.removeAllViews()
         var total = 0
         var doneCount = 0
         try {
@@ -726,7 +799,11 @@ class HudService : Service() {
         if (total > 0) {
             sessionBar?.progress = (1000 * (total - remain) / total).coerceIn(0, 1000)
         }
-        miniClock?.text = if (remain > 0) "%02d:%02d".format(remain / 60, remain % 60) else "☕"
+        miniClock?.text = if (remain > 0) {
+            "⏱\n%02d:%02d".format(remain / 60, remain % 60)
+        } else {
+            "⏱"
+        }
     }
 
     // ── 每秒刷新 ──────────────────────────────────────────
@@ -738,7 +815,7 @@ class HudService : Service() {
             clockText?.text = "$hh:$mm"
             if (miniMode) {
                 val raw = prefs.getString(KEY_SESS, "") ?: ""
-                if (raw.isEmpty()) miniClock?.text = "$hh:$mm"
+                if (raw.isEmpty()) miniClock?.text = "⏱\n$hh:$mm"
             }
             val sess = prefs.getString(KEY_SESS, "") ?: ""
             if (sess.isNotEmpty()) {
@@ -748,7 +825,7 @@ class HudService : Service() {
                     // ignore
                 }
             }
-            handler.postDelayed(this, 500)
+            handler.postDelayed(this, 1000)
         }
     }
 

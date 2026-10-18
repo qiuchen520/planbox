@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../data/db.dart';
 import '../models.dart';
+import '../palette.dart';
 
 /// 能响应悬浮窗「暂停 / 继续」的那一方（目前只有 FocusPage）。
 abstract class HudTimerHost {
@@ -139,6 +140,8 @@ class Hud {
 
   static bool _busy = false;
   static bool _again = false;
+  /// 上一次推下去的 payload，一模一样就不用再推一遍
+  static String? _lastSent;
 
   /// 重算今日清单并下发（任务增删改、打卡、跨天都会走它）
   static Future<void> refresh() async {
@@ -149,7 +152,12 @@ class Hud {
     }
     _busy = true;
     try {
-      await pushPayload(await todayPayload());
+      final payload = await todayPayload();
+      final json = jsonEncode(payload);
+      if (json != _lastSent) {
+        _lastSent = json;
+        await pushPayload(payload);
+      }
     } catch (_) {
       // 悬浮窗拿不到数据不影响主界面
     } finally {
@@ -210,6 +218,8 @@ class Hud {
     return {
       'date': '${now.month} 月 ${now.day} 日 · ${_weekday(now.weekday)}',
       'tasks': rows,
+      // 1 = 深色。悬浮窗按这个换配色，做到「跟随 App」
+      'dark': Pal.dark ? 1 : 0,
     };
   }
 
