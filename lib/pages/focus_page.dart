@@ -38,7 +38,7 @@ class FocusPage extends StatefulWidget {
   State<FocusPage> createState() => _FocusPageState();
 }
 
-class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMixin {
+class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _bg = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 24),
@@ -52,6 +52,10 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
   bool _guardOn = false;
   /// 只自动提醒一次权限，别每次继续都弹
   bool _permAsked = false;
+  /// 计时锚点：剩余秒数只在 anchor 那一刻是准的，之后按墙钟推算。
+  /// 这样切后台、页面被系统回收重建，都不会让倒计时凭空跳走或归零。
+  DateTime? _anchor;
+  int _remainAtAnchor = 0;
 
   bool get _hasPlan => _totalSec > 0;
   double get _progress => _totalSec == 0
@@ -61,23 +65,69 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
   @override
   void initState() {
     super.initState();
-    // 有预估用时就直接按它开跑；没有就让用户在页面上选一个
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_restore());
+  }
+
+  /// 先看有没有上一轮的进度（切后台/被回收后回来），没有就按预估用时开跑
+  Future<void> _restore() async {
+    final sess = await FocusGuard.loadSession(widget.task.id);
+    if (!mounted) return;
+    if (sess != null) {
+      final total = sess['total'] as int;
+      final remain = sess['remain'] as int;
+      final wasRunning = sess['running'] as bool;
+      setState(() {
+        _totalSec = total;
+        _remainSec = remain > 0 ? remain : total;
+        _running = false;
+      });
+      if (wasRunning && remain > 0) _start();
+      return;
+    }
     final est = widget.task.estimate;
     if (est > 0) {
-      _totalSec = est * 60;
-      _remainSec = _totalSec;
+      setState(() {
+        _totalSec = est * 60;
+        _remainSec = _totalSec;
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) => _start());
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从后台回来时按墙钟把剩余时间对齐一次，别停在旧数字上
+    if (state == AppLifecycleState.resumed && _running) setState(_syncRemain);
+  }
+
+  /// 把 _remainSec 按墙钟对齐到「现在」
+  void _syncRemain() {
+    final a = _anchor;
+    if (a == null) return;
+    final passed = DateTime.now().difference(a).inMilliseconds ~/ 1000;
+    final left = _remainAtAnchor - passed;
+    _remainSec = left > 0 ? left : 0;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ticker?.cancel();
     _bg.dispose();
     // 离开页面就别让噪音一直响着
     Ambience.i.stop();
-    // 正常离开 = 这一轮结束。不清标记的话，下次启动会被当成「偷跑」
-    if (_guardOn) unawaited(FocusGuard.end());
+    // 只是切页面/按返回键离开，不等于这一轮结束：守护继续、进度存着，
+    // 回来能接着数。真正的收尾在 _markDone() / 到点 / 用户点「就这样结束」。
+    if (_running) {
+      _syncRemain();
+      unawaited(FocusGuard.saveSession(
+        taskId: widget.task.id,
+        totalSec: _totalSec,
+        remainSec: _remainSec,
+        running: true,
+      ));
+    }
     super.dispose();
   }
 
@@ -85,28 +135,43 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
   void _start() {
     if (!_hasPlan) return;
     if (_remainSec <= 0) _remainSec = _totalSec;
+    _anchor = DateTime.now();
+    _remainAtAnchor = _remainSec;
     setState(() => _running = true);
     Ambience.i.resume();
     unawaited(_ensureGuard());
+    unawaited(FocusGuard.saveSession(
+      taskId: widget.task.id,
+      totalSec: _totalSec,
+      remainSec: _remainSec,
+      running: true,
+    ));
     _ticker?.cancel();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_remainSec <= 1) {
+    _ticker = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      _syncRemain();
+      if (_remainSec <= 0) {
         _ticker?.cancel();
-        setState(() {
-          _remainSec = 0;
-          _running = false;
-        });
+        setState(() => _running = false);
+        unawaited(FocusGuard.clearSession());
         _onTimeUp();
         return;
       }
-      setState(() => _remainSec--);
+      setState(() {});
     });
   }
 
   void _pause() {
+    _syncRemain();
     _ticker?.cancel();
+    _anchor = null;
     Ambience.i.pause();
     setState(() => _running = false);
+    unawaited(FocusGuard.saveSession(
+      taskId: widget.task.id,
+      totalSec: _totalSec,
+      remainSec: _remainSec,
+      running: false,
+    ));
   }
 
   /// 把原生守护点起来。权限不齐就先问一句，不强行开始。
@@ -262,6 +327,8 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
         actions: [
           TextButton(
             onPressed: () {
+              // 就这样结束也算收工，别让守护和通知继续挂着
+              unawaited(FocusGuard.end());
               Navigator.pop(ctx);
               Navigator.pop(context, false); // 不标记完成，直接退出
             },
@@ -291,6 +358,9 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
 
   Future<void> _markDone() async {
     _ticker?.cancel();
+    _anchor = null;
+    // 这一轮真正结束了：清标记 + 清会话 + 停服务
+    unawaited(FocusGuard.end());
     await Ambience.i.stop();
     if (!widget.task.done) {
       // toggleTask 会把重复计划推进到下一次，和列表里手动勾选的行为保持一致

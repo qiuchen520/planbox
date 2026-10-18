@@ -1,7 +1,7 @@
 name: planbox
 description: "PlanBox（计划盒）— 离线优先的学生计划工具：课表 / 作业 / 打卡 / 番茄钟。"
 publish_to: 'none'
-version: 0.6.5+23
+version: 0.6.6+24
 environment:
   sdk: '>=3.0.0 <4.0.0'
 

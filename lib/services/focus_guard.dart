@@ -28,6 +28,10 @@ class FocusGuard {
   static const _kActiveAt = 'focus_active_at';
   static const _kViolation = 'focus_violation';
   static const _kWhitelist = 'focus_whitelist';
+  static const _kSessTask = 'focus_sess_task';
+  static const _kSessTotal = 'focus_sess_total';
+  static const _kSessRemain = 'focus_sess_remain';
+  static const _kSessRunning = 'focus_sess_running';
   static const _kDay = 'focus_wl_day';
   static const _kCount = 'focus_wl_count';
 
@@ -48,10 +52,41 @@ class FocusGuard {
     return true;
   }
 
-  /// 正常收工：清标记 + 停服务
+  /// 正常收工：清标记 + 清会话 + 停服务
   static Future<void> end() async {
     await DB.i.setSetting(_kActive, '0');
+    await clearSession();
     await FocusLock.stop();
+  }
+
+  // ── 计时会话（页面重建 / 切后台回来都能接上） ──────────
+  /// 存一下这一轮的进度。remaining 是「在 anchor 这一刻还剩多少秒」。
+  static Future<void> saveSession({
+    required int taskId,
+    required int totalSec,
+    required int remainSec,
+    required bool running,
+  }) async {
+    await DB.i.setSetting(_kSessTask, '$taskId');
+    await DB.i.setSetting(_kSessTotal, '$totalSec');
+    await DB.i.setSetting(_kSessRemain, '$remainSec');
+    await DB.i.setSetting(_kSessRunning, running ? '1' : '0');
+  }
+
+  /// 读回这一轮的进度；不是同一个任务或没有记录就返回 null
+  static Future<Map<String, dynamic>?> loadSession(int taskId) async {
+    final t = await DB.i.getSetting(_kSessTask);
+    if (t == null || t.isEmpty || t != '$taskId') return null;
+    final total = int.tryParse(await DB.i.getSetting(_kSessTotal) ?? '') ?? 0;
+    if (total <= 0) return null;
+    final remain = int.tryParse(await DB.i.getSetting(_kSessRemain) ?? '') ?? 0;
+    final running = (await DB.i.getSetting(_kSessRunning)) == '1';
+    return {'total': total, 'remain': remain, 'running': running};
+  }
+
+  static Future<void> clearSession() async {
+    await DB.i.setSetting(_kSessTask, '');
+    await DB.i.setSetting(_kSessRunning, '0');
   }
 
   /// 当前这轮还在守护中吗（页面回来时用）

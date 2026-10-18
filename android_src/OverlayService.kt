@@ -60,6 +60,8 @@ class OverlayService : Service() {
         const val KEY_PAUSE_UNTIL = "pause_until"
         /** 长按紧急退出的时间戳。Flutter 侧靠它区分「自己退的」和「被人强杀的」 */
         const val KEY_EMERGENCY_AT = "emergency_at"
+        /** 这一轮的结束时刻。到点服务自己退，别让通知一直挂着 */
+        const val KEY_SESSION_END = "session_end_at"
 
         /** 给 Flutter 侧查进程是否还活着 */
         @Volatile
@@ -76,6 +78,15 @@ class OverlayService : Service() {
         var lastReason: String = ""
 
         fun start(ctx: Context, minutes: Int) {
+            // 用户主动开始新一轮：之前「紧急退出」的 10 分钟静默立刻作废，
+            // 否则处理事情回来想重新守护，服务会一起来就自己退出。
+            try {
+                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .remove(KEY_PAUSE_UNTIL)
+                    .apply()
+            } catch (_: Throwable) {
+                // ignore
+            }
             val i = Intent(ctx, OverlayService::class.java).apply {
                 action = ACTION_START
                 putExtra("minutes", minutes)
@@ -152,6 +163,20 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action != ACTION_STOP) {
+            // 记下这一轮该在什么时候结束，到点了自己收尾
+            val minutes = intent?.getIntExtra("minutes", 0) ?: 0
+            try {
+                getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putLong(
+                        KEY_SESSION_END,
+                        if (minutes > 0) System.currentTimeMillis() + minutes * 60_000L else 0L,
+                    )
+                    .apply()
+            } catch (_: Throwable) {
+                // ignore
+            }
+        }
         if (intent?.action == ACTION_STOP) {
             quit()
             return START_NOT_STICKY
@@ -166,6 +191,19 @@ class OverlayService : Service() {
         polling = false
         handler.removeCallbacksAndMessages(null)
         hideOverlay()
+        // 前台服务的通知不会随着进程一起消失，这里必须自己摘掉，
+        // 否则专注都结束了通知栏还挂着「专注守护中」。
+        try {
+            stopForeground(true)
+        } catch (_: Throwable) {
+            // ignore
+        }
+        try {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.cancel(NOTIF_ID)
+        } catch (_: Throwable) {
+            // ignore
+        }
         super.onDestroy()
     }
 
@@ -238,6 +276,17 @@ class OverlayService : Service() {
     }
 
     private fun tick() {
+        // 到点自己退：计时结束后不该再拦人，通知也不该留着
+        val endAt = try {
+            getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_SESSION_END, 0L)
+        } catch (_: Throwable) {
+            0L
+        }
+        if (endAt > 0 && System.currentTimeMillis() >= endAt) {
+            lastReason = "time_up"
+            quit()
+            return
+        }
         if (!FocusPerms.canOverlay(this) || !FocusPerms.hasUsage(this)) {
             lastReason = "perm_lost"
             quit()

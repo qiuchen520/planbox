@@ -214,6 +214,7 @@ class _PermissionPageState extends State<PermissionPage>
       'add_view_failed': '幕布挂不上去（悬浮窗被系统忽略）',
       'perm_lost': '运行中权限被撤了',
       'emergency': '被长按紧急退出',
+      'time_up': '时长到点，已自动收工',
     }[reason] ?? reason;
     return Container(
       margin: const EdgeInsets.only(top: 12),
