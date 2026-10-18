@@ -19,7 +19,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
-import android.provider.Settings
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -29,15 +28,19 @@ import android.widget.TextView
 import android.widget.Toast
 
 /**
- * 专注锁：前台服务 + 每秒查一次前台包名，跑偏了就铺一层全屏幕布，
+ * 专注锁：前台服务 + 每 0.9 秒查一次前台包名，跑偏了就铺一层全屏幕布，
  * 5 秒倒计时结束把 PlanBox 拉回前台。
  *
- * 几条硬性原则（都是踩过的坑）：
- * - 自己、桌面、系统 UI、以及「用户点开的那个设置页」永远不拦，否则会把自己锁死；
- * - 息屏 / 锁屏时不铺幕布（否则亮屏后一层黑压在锁屏上）；
- * - 任何异常都只走「撤幕布」，绝不进入死循环；
- * - 连续拉回失败多次就主动收工，避免把设备卡在循环里；
- * - 幕布底部有一行小字，长按可以紧急退出（防死锁的最后一根保险丝）。
+ * 这一版针对「授权了但完全不拦」做过专门加固：
+ * - 权限判定走 FocusPerms（Settings 与 AppOps 任一为真），不再被 ROM 的
+ *   canDrawOverlays 假 false 误杀；
+ * - 一定先 startForeground 再考虑退出，否则 API 26+ 会直接崩掉进程（
+ *   "did not then call Service.startForeground"），表现同样是「什么都没发生」；
+ * - 前台包名取 UsageEvents 的 MOVE_TO_FOREGROUND / ACTIVITY_RESUMED，
+ *   事件流拿不到时退回 queryUsageStats 的 lastTimeUsed；
+ * - 系统拦住后台启动时（很多 ROM 有「后台弹出界面」限制），幕布**不撤**，
+ *   改成提示手动回 App，避免「倒计时结束你还在刷」；
+ * - 一直拦着超过 60 秒会把紧急退出提示变亮，防止真锁死。
  */
 class OverlayService : Service() {
 
@@ -46,7 +49,7 @@ class OverlayService : Service() {
         private const val NOTIF_ID = 4210
         private const val POLL_MS = 900L
         private const val COUNT_SEC = 5
-        private const val MAX_SHOW_MS = 45_000L
+        private const val ESCALATE_MS = 60_000L
         private const val MAX_LAUNCH_PER_MIN = 8
 
         const val ACTION_START = "top.planbox.FOCUS_START"
@@ -60,6 +63,16 @@ class OverlayService : Service() {
         @Volatile
         var running: Boolean = false
 
+        // ── 自检信息（给 Flutter 的 diag 用） ──
+        @Volatile
+        var lastFg: String? = null
+
+        @Volatile
+        var lastTickAt: Long = 0L
+
+        @Volatile
+        var lastReason: String = ""
+
         fun start(ctx: Context, minutes: Int) {
             val i = Intent(ctx, OverlayService::class.java).apply {
                 action = ACTION_START
@@ -72,7 +85,7 @@ class OverlayService : Service() {
                     ctx.startService(i)
                 }
             } catch (_: Throwable) {
-                // 后台启动受限时静默失败，Flutter 侧用 isRunning 判定
+                lastReason = "start_failed"
             }
         }
 
@@ -89,6 +102,8 @@ class OverlayService : Service() {
     private var wm: WindowManager? = null
     private var overlay: View? = null
     private var countText: TextView? = null
+    private var hintText: TextView? = null
+    private var escalated = false
 
     private var remain = COUNT_SEC
     private var shownAt = 0L
@@ -101,30 +116,42 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // 顺序很重要：先拿到前台服务身份，再谈别的。
+        // 反过来（先 stopSelf 再 startForeground）在 API 26+ 会抛
+        // RemoteServiceException 直接杀进程，看起来就是「授权了但毫无反应」。
+        startForegroundSafely()
+
         wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
         // 上一次点了「紧急退出」，给一段真正的喘息时间
-        val pauseUntil = prefs.getLong(KEY_PAUSE_UNTIL, 0L)
-        if (System.currentTimeMillis() < pauseUntil) {
-            stopSelf()
+        if (System.currentTimeMillis() < prefs.getLong(KEY_PAUSE_UNTIL, 0L)) {
+            lastReason = "paused"
+            quit()
             return
         }
-        if (!Settings.canDrawOverlays(this) || !hasUsageAccess()) {
-            stopSelf()
+        if (!FocusPerms.canOverlay(this)) {
+            lastReason = "no_overlay"
+            quit()
             return
         }
-        startForegroundSafely()
+        if (!FocusPerms.hasUsage(this)) {
+            lastReason = "no_usage"
+            quit()
+            return
+        }
+
         whitelist = prefs.getStringSet(KEY_WHITELIST, emptySet())?.toHashSet() ?: emptySet()
         launcherPkg = resolveLauncher()
         running = true
+        lastReason = "running"
         polling = true
         handler.post(poll)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            stopSelf()
+            quit()
             return START_NOT_STICKY
         }
         return START_STICKY
@@ -140,7 +167,20 @@ class OverlayService : Service() {
         super.onDestroy()
     }
 
-    // ── 通知（前台服务必须有，否则会被系统当后台服务掐掉） ──
+    private fun quit() {
+        running = false
+        polling = false
+        handler.removeCallbacksAndMessages(null)
+        hideOverlay()
+        try {
+            stopForeground(true)
+        } catch (_: Throwable) {
+            // ignore
+        }
+        stopSelf()
+    }
+
+    // ── 通知（前台服务必须有） ──
 
     private fun startForegroundSafely() {
         try {
@@ -177,7 +217,7 @@ class OverlayService : Service() {
                 .build()
             startForeground(NOTIF_ID, n)
         } catch (_: Throwable) {
-            // 通知建不起来也不该让守护直接死掉
+            lastReason = "notify_failed"
         }
     }
 
@@ -196,14 +236,15 @@ class OverlayService : Service() {
     }
 
     private fun tick() {
-        // 权限被撤了就别硬撑，直接收工（Flutter 侧会记为违规）
-        if (!Settings.canDrawOverlays(this) || !hasUsageAccess()) {
-            stopSelf()
+        if (!FocusPerms.canOverlay(this) || !FocusPerms.hasUsage(this)) {
+            lastReason = "perm_lost"
+            quit()
             return
         }
-        // 幕布挂太久说明拉回一直失败，撤掉避免卡死
-        if (overlay != null && SystemClock.uptimeMillis() - shownAt > MAX_SHOW_MS) {
-            hideOverlay()
+        if (overlay != null && !escalated &&
+            SystemClock.uptimeMillis() - shownAt > ESCALATE_MS
+        ) {
+            showManualHint()
         }
 
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
@@ -218,54 +259,76 @@ class OverlayService : Service() {
         }
 
         val fg = foregroundPackage()
-        if (fg == null || fg == packageName || isAllowed(fg)) {
+        lastFg = fg
+        lastTickAt = System.currentTimeMillis()
+
+        if (fg == null) {
+            // 读不到前台包名（有的 ROM 事件流是空的）。不铺幕布，但把原因记下来，
+            // 自检页会显示「读不到前台应用」，让人知道问题出在使用情况访问上。
+            lastReason = "no_foreground"
+            hideOverlay()
+            return
+        }
+        if (fg == packageName || isAllowed(fg)) {
             hideOverlay()
             return
         }
         showOverlay(fg)
     }
 
-    private fun hasUsageAccess(): Boolean {
-        return try {
-            val ops = getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
-            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                ops.unsafeCheckOpNoThrow(
-                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
-                    android.os.Process.myUid(), packageName,
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                ops.checkOpNoThrow(
-                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
-                    android.os.Process.myUid(), packageName,
-                )
-            }
-            mode == android.app.AppOpsManager.MODE_ALLOWED
-        } catch (_: Throwable) {
-            false
-        }
-    }
-
+    /**
+     * 取前台包名。
+     *
+     * 优先 UsageEvents（准确），两条事件类型都认（API 29 之后叫 ACTIVITY_RESUMED，
+     * 更早叫 MOVE_TO_FOREGROUND，个别 ROM 仍然只发后者）。
+     * 事件流为空时退回 queryUsageStats 里 lastTimeUsed 最新的那个包。
+     */
     private fun foregroundPackage(): String? {
-        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
+        val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            ?: return null
         val now = System.currentTimeMillis()
-        val events = try {
-            usm.queryEvents(now - 15_000, now)
+
+        try {
+            val events = usm.queryEvents(now - 20_000, now)
+            val e = UsageEvents.Event()
+            var best: String? = null
+            var bestTs = 0L
+            while (events.hasNextEvent()) {
+                events.getNextEvent(e)
+                val t = e.eventType
+                val resumed = t == UsageEvents.Event.MOVE_TO_FOREGROUND ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                        t == UsageEvents.Event.ACTIVITY_RESUMED)
+                if (resumed && e.timeStamp >= bestTs) {
+                    bestTs = e.timeStamp
+                    best = e.packageName
+                }
+            }
+            if (best != null) return best
         } catch (_: Throwable) {
-            return null
+            // 落到下面的兜底
         }
-        val e = UsageEvents.Event()
-        val want = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            UsageEvents.Event.ACTIVITY_RESUMED
-        } else {
-            UsageEvents.Event.MOVE_TO_FOREGROUND
+
+        try {
+            val stats = usm.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY, now - 60_000, now,
+            )
+            if (stats != null) {
+                var bestPkg: String? = null
+                var bestT = 0L
+                for (s in stats) {
+                    if (s.lastTimeUsed > bestT) {
+                        bestT = s.lastTimeUsed
+                        bestPkg = s.packageName
+                    }
+                }
+                // 只有「刚刚还在用」才算前台，否则会一直误判成上一个应用
+                if (bestPkg != null && now - bestT < 30_000L) return bestPkg
+            }
+        } catch (_: Throwable) {
+            // ignore
         }
-        var last: String? = null
-        while (events.hasNextEvent()) {
-            events.getNextEvent(e)
-            if (e.eventType == want) last = e.packageName
-        }
-        return last
+        return null
     }
 
     private fun resolveLauncher(): String? {
@@ -281,7 +344,6 @@ class OverlayService : Service() {
     private fun isAllowed(pkg: String): Boolean {
         if (whitelist.contains(pkg)) return true
         if (pkg == launcherPkg) return true
-        // 系统界面 / 通话界面 / 权限授予页：拦了就会死锁
         if (pkg == "com.android.systemui" || pkg == "android") return true
         if (pkg == "com.android.dialer" || pkg == "com.android.incallui") return true
         if (pkg.startsWith("com.android.permissioncontroller")) return true
@@ -299,7 +361,6 @@ class OverlayService : Service() {
             setBackgroundColor(Color.parseColor("#F00E1220"))
             isClickable = true
             isFocusable = true
-            // 吞掉所有按键，包括返回
             setOnKeyListener { _, _, _ -> true }
         }
         root.addView(
@@ -326,7 +387,6 @@ class OverlayService : Service() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 72f)
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            countText = this
         }
         root.addView(cd)
         root.addView(
@@ -338,20 +398,18 @@ class OverlayService : Service() {
                 setPadding(0, dp(10), 0, 0)
             },
         )
-        // 防死锁保险丝：长按这行小字 = 立刻解除拦截
-        root.addView(
-            TextView(this).apply {
-                text = "长按这里 3 秒可紧急退出"
-                setTextColor(Color.parseColor("#33FFFFFF"))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-                gravity = Gravity.CENTER
-                setPadding(dp(24), dp(40), dp(24), dp(24))
-                setOnLongClickListener {
-                    emergencyExit()
-                    true
-                }
-            },
-        )
+        val hint = TextView(this).apply {
+            text = "长按这里 3 秒可紧急退出"
+            setTextColor(Color.parseColor("#33FFFFFF"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            gravity = Gravity.CENTER
+            setPadding(dp(24), dp(40), dp(24), dp(24))
+            setOnLongClickListener {
+                emergencyExit()
+                true
+            }
+        }
+        root.addView(hint)
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -372,16 +430,28 @@ class OverlayService : Service() {
         lp.gravity = Gravity.TOP or Gravity.START
         try {
             wm?.addView(root, lp)
-        } catch (_: Throwable) {
-            // 加不上就什么都不做，下一轮再试
+        } catch (t: Throwable) {
+            lastReason = "add_view_failed"
             return
         }
         overlay = root
         countText = cd
+        hintText = hint
+        escalated = false
         shownAt = SystemClock.uptimeMillis()
         remain = COUNT_SEC
         cd.text = "$remain"
+        lastReason = "blocking"
         handler.postDelayed(ticker, 1000L)
+    }
+
+    /** 后台拉起被系统拦下时，把幕布留下并给出明确指引（别让人继续刷） */
+    private fun showManualHint() {
+        escalated = true
+        val h = hintText ?: return
+        h.text = "系统不允许自动跳回，请手动返回计划盒\n长按这里 3 秒可紧急退出"
+        h.setTextColor(Color.parseColor("#B3FFFFFF"))
+        h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12.5f)
     }
 
     private val ticker = object : Runnable {
@@ -402,10 +472,10 @@ class OverlayService : Service() {
         if (now - lastLaunchAt > 60_000L) launchCount = 0
         lastLaunchAt = now
         launchCount++
-        // 一直被系统拦回来就认输收工，绝不无限重试
         if (launchCount > MAX_LAUNCH_PER_MIN) {
-            hideOverlay()
-            stopSelf()
+            // 怎么都拉不回来：幕布留着，让人手动处理
+            lastReason = "launch_blocked"
+            showManualHint()
             return
         }
         try {
@@ -418,11 +488,26 @@ class OverlayService : Service() {
             }
             startActivity(i)
         } catch (_: Throwable) {
-            hideOverlay()
+            lastReason = "launch_exception"
+            showManualHint()
             return
         }
-        // 等 App 真的画出来再撤幕布，否则会闪一下桌面
-        handler.postDelayed({ hideOverlay() }, 650L)
+        // 不要无条件撤幕布：先确认 App 真的到前台了。
+        // 很多 ROM 有「后台弹出界面」开关，startActivity 会静默失败。
+        handler.postDelayed({
+            if (overlay == null) return@postDelayed
+            val fg = foregroundPackage()
+            if (fg == packageName) {
+                lastReason = "ok"
+                hideOverlay()
+            } else {
+                lastReason = "launch_blocked"
+                showManualHint()
+                remain = COUNT_SEC
+                countText?.text = "$remain"
+                handler.postDelayed(ticker, 1000L)
+            }
+        }, 900L)
     }
 
     private fun emergencyExit() {
@@ -435,7 +520,8 @@ class OverlayService : Service() {
         }
         hideOverlay()
         Toast.makeText(this, "已紧急退出，10 分钟内不再拦截", Toast.LENGTH_LONG).show()
-        stopSelf()
+        lastReason = "emergency"
+        quit()
     }
 
     private fun hideOverlay() {
@@ -443,6 +529,8 @@ class OverlayService : Service() {
         val v = overlay ?: return
         overlay = null
         countText = null
+        hintText = null
+        escalated = false
         try {
             wm?.removeView(v)
         } catch (_: Throwable) {

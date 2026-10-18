@@ -35,8 +35,8 @@ class FocusChannel(
         channel.setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
-                    "canUsage" -> result.success(hasUsageAccess())
-                    "canOverlay" -> result.success(canOverlay())
+                    "canUsage" -> result.success(FocusPerms.hasUsage(ctx))
+                    "canOverlay" -> result.success(FocusPerms.canOverlay(ctx))
                     "openUsage" -> {
                         openUsageSettings()
                         result.success(true)
@@ -55,6 +55,7 @@ class FocusChannel(
                         result.success(true)
                     }
                     "isRunning" -> result.success(OverlayService.running)
+                    "diag" -> result.success(diag())
                     "ignoringBattery" -> result.success(isIgnoringBattery())
                     "openBattery" -> {
                         openBatterySettings()
@@ -79,6 +80,20 @@ class FocusChannel(
     }
 
     // ── 权限 ───────────────────────────────────────────────
+
+    /**
+     * 自检快照：把“服务到底卡在哪一步”摊开给 Flutter 侧看。
+     */
+    private fun diag(): Map<String, Any?> = mapOf(
+        "running" to OverlayService.running,
+        "usage" to FocusPerms.hasUsage(ctx),
+        "overlay" to FocusPerms.canOverlay(ctx),
+        "battery" to isIgnoringBattery(),
+        "lastFg" to OverlayService.lastFg,
+        "lastTickAt" to OverlayService.lastTickAt,
+        "reason" to OverlayService.lastReason,
+        "sdk" to Build.VERSION.SDK_INT,
+    )
 
     private fun hasUsageAccess(): Boolean {
         val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false

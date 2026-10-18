@@ -78,6 +78,13 @@ class FocusLock {
 
   static Future<bool> isRunning() async => await _call<bool>('isRunning') ?? false;
 
+  /// 自检：服务在不在跑、权限到底认不认、最近看到的前台是哪个
+  static Future<Map<String, dynamic>> diag() async {
+    final raw = await _call<Map>('diag');
+    if (raw == null) return <String, dynamic>{};
+    return raw.map((k, v) => MapEntry(k.toString(), v));
+  }
+
   static Future<void> setWhitelist(List<String> packages) =>
       _call<bool>('setWhitelist', {'packages': packages});
 

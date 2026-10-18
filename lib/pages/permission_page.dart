@@ -28,6 +28,7 @@ class _PermissionPageState extends State<PermissionPage>
   bool? _overlay;
   bool? _battery;
   bool _busy = false;
+  Map<String, dynamic> _diag = <String, dynamic>{};
 
   @override
   void initState() {
@@ -52,11 +53,13 @@ class _PermissionPageState extends State<PermissionPage>
     final usage = await FocusLock.canUsage();
     final overlay = await FocusLock.canOverlay();
     final battery = await FocusLock.ignoringBattery();
+    final diag = await FocusLock.diag();
     if (!mounted) return;
     setState(() {
       _usage = usage;
       _overlay = overlay;
       _battery = battery;
+      _diag = diag;
     });
   }
 
@@ -149,6 +152,7 @@ class _PermissionPageState extends State<PermissionPage>
             actionLabel: '去设置',
             onTap: () => _go(FocusLock.openBatterySettings),
           ),
+          _diagCard(),
           const SizedBox(height: 4),
           Center(
             child: TextButton(
@@ -182,6 +186,75 @@ class _PermissionPageState extends State<PermissionPage>
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 自检面板：告诉用户“服务到底卡在哪一步”。
+  Widget _diagCard() {
+    final running = _diag['running'] == true;
+    final reason = (_diag['reason'] ?? '').toString();
+    final lastFg = (_diag['lastFg'] ?? '').toString();
+    final sdk = (_diag['sdk'] ?? '').toString();
+    final reasonText = const {
+      '': '尚未启动过',
+      'paused': '处于紧急暂停期',
+      'no_overlay': '没拿到悬浮窗权限，服务自己退了',
+      'no_usage': '没拿到使用情况权限，服务自己退了',
+      'start_failed': '系统拒绝了服务启动',
+      'running': '正常运行中',
+      'no_foreground': '读不到前台应用（使用情况权限可能没真生效）',
+      'blocking': '正在拦截',
+      'ok': '已把你拉回计划盒',
+      'launch_blocked': '系统不允许后台拉起界面（读书郎常见）',
+      'launch_exception': '拉起界面抛异常',
+      'add_view_failed': '幕布挂不上去（悬浮窗被系统忽略）',
+      'perm_lost': '运行中权限被撤了',
+      'emergency': '被长按紧急退出',
+    }[reason] ?? reason;
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: kCard.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kLine.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('自检',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: kFg)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (running ? kOk : kDim).withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(running ? '服务在跑' : '服务没跑',
+                    style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: running ? kOk : kDim)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('当前状态：$reasonText',
+              style: TextStyle(fontSize: 11.5, height: 1.6, color: kDim)),
+          if (lastFg.isNotEmpty)
+            Text('最近前台：$lastFg',
+                style: TextStyle(fontSize: 11.5, height: 1.6, color: kDim)),
+          if (sdk.isNotEmpty)
+            Text('Android SDK $sdk',
+                style: TextStyle(fontSize: 11, height: 1.6, color: kDim)),
         ],
       ),
     );
