@@ -62,21 +62,21 @@ class FocusGuard {
   // ── 计时会话（页面重建 / 切后台回来都能接上） ──────────
   /// 存一下这一轮的进度。remaining 是「在 anchor 这一刻还剩多少秒」。
   static Future<void> saveSession({
-    required int taskId,
+    required int? taskId,
     required int totalSec,
     required int remainSec,
     required bool running,
   }) async {
-    await DB.i.setSetting(_kSessTask, '$taskId');
+    await DB.i.setSetting(_kSessTask, '${taskId ?? -1}');
     await DB.i.setSetting(_kSessTotal, '$totalSec');
     await DB.i.setSetting(_kSessRemain, '$remainSec');
     await DB.i.setSetting(_kSessRunning, running ? '1' : '0');
   }
 
   /// 读回这一轮的进度；不是同一个任务或没有记录就返回 null
-  static Future<Map<String, dynamic>?> loadSession(int taskId) async {
+  static Future<Map<String, dynamic>?> loadSession(int? taskId) async {
     final t = await DB.i.getSetting(_kSessTask);
-    if (t == null || t.isEmpty || t != '$taskId') return null;
+    if (t == null || t.isEmpty || t != '${taskId ?? -1}') return null;
     final total = int.tryParse(await DB.i.getSetting(_kSessTotal) ?? '') ?? 0;
     if (total <= 0) return null;
     final remain = int.tryParse(await DB.i.getSetting(_kSessRemain) ?? '') ?? 0;
