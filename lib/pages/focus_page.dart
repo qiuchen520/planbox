@@ -76,6 +76,7 @@ class _FocusPageState extends State<FocusPage>
     WidgetsBinding.instance.addObserver(this);
     // 悬浮窗的「暂停 / 继续」直接打到这一页
     Hud.timerHost = this;
+    Hud.onRunningChanged = _onHudChanged;
     unawaited(_loadPrefs());
     unawaited(_restore());
   }
@@ -113,7 +114,11 @@ class _FocusPageState extends State<FocusPage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // 从后台回来时按墙钟把剩余时间对齐一次，别停在旧数字上
-    if (state == AppLifecycleState.resumed && _running) setState(_syncRemain);
+    if (state == AppLifecycleState.resumed) {
+      if (_running) setState(_syncRemain);
+      // 回前台重读一次：悬浮窗可能在别处被关掉了
+      unawaited(_loadPrefs());
+    }
   }
 
   /// 把 _remainSec 按墙钟对齐到「现在」
@@ -135,6 +140,7 @@ class _FocusPageState extends State<FocusPage>
     // 只是切页面/按返回键离开，不等于这一轮结束：守护继续、进度存着，
     // 回来能接着数。真正的收尾在 _markDone() / 到点 / 用户点「就这样结束」。
     if (Hud.timerHost == this) Hud.timerHost = null;
+    Hud.onRunningChanged = null;
     if (_running) {
       _syncRemain();
       unawaited(FocusGuard.saveSession(
@@ -239,6 +245,10 @@ class _FocusPageState extends State<FocusPage>
   }
 
   /// 读两个开关的存量状态（守护偏好 + 悬浮窗是否在跑）
+  void _onHudChanged() {
+    if (mounted) unawaited(_loadPrefs());
+  }
+
   Future<void> _loadPrefs() async {
     final g = await DB.i.getSetting('guard_pref');
     final on = await Hud.isRunning();
@@ -574,6 +584,18 @@ class _FocusPageState extends State<FocusPage>
               if (await _onWillPop() && mounted) Navigator.pop(context, false);
             },
           ),
+          // 桌面悬浮窗：就挂在退出旁边，亮着=正在挂
+          IconButton(
+            icon: Icon(
+              _hudOn
+                  ? Icons.picture_in_picture_alt
+                  : Icons.picture_in_picture_alt_outlined,
+              size: 20,
+              color: _hudOn ? kAcc : kDim,
+            ),
+            tooltip: _hudOn ? '悬浮窗已挂（点关掉）' : '把番茄挂到桌面（点打开）',
+            onPressed: () => unawaited(_toggleHud()),
+          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -723,29 +745,72 @@ class _FocusPageState extends State<FocusPage>
                     icon: Icons.check_circle_outline, danger: true),
               ],
             ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              alignment: WrapAlignment.center,
-              children: [
-                _chip('改时长', _chooseCustom,
-                    dense: true, icon: Icons.timer_outlined),
-                _chip(_guardPref ? '守护开' : '守护关',
-                    () => unawaited(_toggleGuard()),
-                    active: _guardPref,
-                    dense: true,
-                    icon: Icons.shield_outlined),
-                _chip(_hudOn ? '悬浮窗开' : '悬浮窗关',
-                    () => unawaited(_toggleHud()),
-                    active: _hudOn,
-                    dense: true,
-                    icon: Icons.picture_in_picture_alt_outlined),
-              ],
-            ),
+            const SizedBox(height: 8),
+            _toolbar(),
           ],
           _noiseBar(),
         ],
+      ),
+    );
+  }
+
+  /// 底部一条胶囊：改时长 · 守护开关
+  Widget _toolbar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+      decoration: BoxDecoration(
+        color: kCard.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: kLine.withValues(alpha: 0.55)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _pill(Icons.timer_outlined, '改时长', _chooseCustom),
+          Container(
+            width: 1,
+            height: 14,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            color: kLine.withValues(alpha: 0.55),
+          ),
+          _pill(
+            _guardPref ? Icons.shield : Icons.shield_outlined,
+            _guardPref ? '守护开' : '守护关',
+            () => unawaited(_toggleGuard()),
+            active: _guardPref,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pill(IconData icon, String label, VoidCallback onTap,
+      {bool active = false}) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(999),
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? kAcc.withValues(alpha: 0.16) : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: active ? kAcc : kDim),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                color: active ? kAcc : kFg,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

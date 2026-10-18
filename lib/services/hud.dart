@@ -27,6 +27,8 @@ class Hud {
   /// 悬浮窗上的一次点击。action: focus / checkin / newTask / toggleTimer /
   /// alreadyDone / hudOff / launch
   static Future<void> Function(String action, int taskId)? onAction;
+  /// 悬浮窗开 / 关状态变了（自己关、被系统回收、App 里关）→ 页面刷新按钮
+  static void Function()? onRunningChanged;
 
   /// 当前正在跑的番茄钟页面（用于「暂停 / 继续」透传）
   static HudTimerHost? timerHost;
@@ -41,6 +43,7 @@ class Hud {
         return null;
       }
       final id = (args['taskId'] as num?)?.toInt() ?? -1;
+      if (a == 'hudOff') _notify();
       await onAction?.call(a, id);
       return null;
     });
@@ -55,6 +58,14 @@ class Hud {
       await onAction?.call(a, id);
     } catch (_) {
       // 坏 payload 直接忽略，别让悬浮窗把人卡住
+    }
+  }
+
+  static void _notify() {
+    try {
+      onRunningChanged?.call();
+    } catch (_) {
+      // 页面已经没了就当没听见
     }
   }
 
@@ -74,10 +85,15 @@ class Hud {
 
   static Future<bool> isRunning() async => (await _call<bool>('isRunning')) ?? false;
 
-  static Future<bool> start() async => (await _call<bool>('start')) ?? false;
+  static Future<bool> start() async {
+    final ok = (await _call<bool>('start')) ?? false;
+    if (ok) _notify();
+    return ok;
+  }
 
   static Future<void> stop() async {
     await _call('stop');
+    _notify();
   }
 
   static Future<void> raise() async {
