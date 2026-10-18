@@ -490,6 +490,9 @@ class OverlayService : Service() {
         hintText = hint
         escalated = false
         shownAt = SystemClock.uptimeMillis()
+        // 幕布是新加的一层 overlay，会把悬浮窗压住；这里把它拎回最上层，
+        // 否则专注期间想看倒计时 / 点头像都看不到。
+        HudService.rebring()
         remain = COUNT_SEC
         cd.text = "$remain"
         lastReason = "blocking"

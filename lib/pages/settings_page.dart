@@ -6,6 +6,8 @@ import '../models.dart';
 import '../palette.dart';
 import '../responsive.dart';
 import '../services/backup.dart';
+import '../services/focus_lock.dart';
+import '../services/hud.dart';
 import '../services/notify.dart';
 import '../theme.dart';
 import 'agreement.dart';
@@ -33,6 +35,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _nSound = true;
   bool _nVibrate = true;
 
+  // 桌面悬浮窗
+  bool _hudOn = false;
   // 备份
   List<File> _backups = const [];
   bool _busy = false;
@@ -50,6 +54,7 @@ class _SettingsPageState extends State<SettingsPage> {
     final pt = await DB.i.periodTimes();
     await Notify.i.load();
     final backups = await Backup.listLocal();
+    final hudOn = await Hud.isRunning();
     if (!mounted) return;
     setState(() {
       _start = s;
@@ -61,6 +66,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _nSound = Notify.i.sound;
       _nVibrate = Notify.i.vibrate;
       _backups = backups;
+      _hudOn = hudOn;
     });
   }
 
@@ -470,6 +476,64 @@ class _SettingsPageState extends State<SettingsPage> {
                         _toast('已发送，请下拉通知栏看看');
                       }
                     : null,
+              ),
+            ],
+          ),
+        ),
+
+        // ── 桌面悬浮窗 ───────────────────────
+        _H('桌面悬浮窗'),
+        Card(
+          child: Column(
+            children: [
+              SwitchListTile(
+                secondary: Icon(Icons.picture_in_picture_alt_outlined),
+                title: Text('显示悬浮窗'),
+                subtitle: Text(_hudOn
+                    ? '桌面常驻：时钟 + 今日任务 + 番茄钟'
+                    : '关着。开了之后不打开 App 也能看见进度'),
+                value: _hudOn,
+                onChanged: (v) async {
+                  if (v) {
+                    if (!await Hud.canShow()) {
+                      _toast('还要一个「显示在其他应用上层」权限');
+                      await FocusLock.openOverlaySettings();
+                      return;
+                    }
+                  }
+                  if (v) {
+                    final ok = await Hud.start();
+                    if (!ok) {
+                      _toast('拉不起悬浮窗，检查一下悬浮窗权限');
+                      return;
+                    }
+                    await Hud.refresh();
+                  } else {
+                    await Hud.stop();
+                  }
+                  await DB.i.setSetting(Hud.settingKey, v ? '1' : '0');
+                  if (mounted) setState(() => _hudOn = v);
+                },
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.open_with_outlined),
+                title: Text('怎么摆'),
+                subtitle: Text(
+                  '按住顶部拖动位置；双指在空白处捏合缩放；'
+                  '点「－」收成小圆点，点圆点再展开。位置和大小会记住。',
+                ),
+                isThreeLine: true,
+              ),
+              Divider(height: 1),
+              ListTile(
+                leading: Icon(Icons.bolt_outlined),
+                title: Text('悬浮窗能干什么'),
+                subtitle: Text(
+                  '点任务开始番茄钟、点圆圈直接打卡、'
+                  '「＋ 新建」跳去加计划；番茄钟的暂停 / 继续两边同步。',
+                ),
+                isThreeLine: true,
               ),
             ],
           ),

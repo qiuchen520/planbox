@@ -10,6 +10,7 @@ import '../models.dart';
 import '../palette.dart';
 import '../services/ambience.dart';
 import '../services/focus_guard.dart';
+import '../services/hud.dart';
 import '../theme.dart';
 import 'permission_page.dart';
 import 'whitelist_page.dart';
@@ -38,7 +39,9 @@ class FocusPage extends StatefulWidget {
   State<FocusPage> createState() => _FocusPageState();
 }
 
-class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _FocusPageState extends State<FocusPage>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver
+    implements HudTimerHost {
   late final AnimationController _bg = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 24),
@@ -66,6 +69,8 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 悬浮窗的「暂停 / 继续」直接打到这一页
+    Hud.timerHost = this;
     unawaited(_restore());
   }
 
@@ -82,7 +87,11 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
         _remainSec = remain > 0 ? remain : total;
         _running = false;
       });
-      if (wasRunning && remain > 0) _start();
+      if (wasRunning && remain > 0) {
+        _start();
+      } else {
+        unawaited(_pushHud());
+      }
       return;
     }
     final est = widget.task.estimate;
@@ -119,6 +128,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
     Ambience.i.stop();
     // 只是切页面/按返回键离开，不等于这一轮结束：守护继续、进度存着，
     // 回来能接着数。真正的收尾在 _markDone() / 到点 / 用户点「就这样结束」。
+    if (Hud.timerHost == this) Hud.timerHost = null;
     if (_running) {
       _syncRemain();
       unawaited(FocusGuard.saveSession(
@@ -128,6 +138,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
         running: true,
       ));
     }
+    unawaited(_pushHud());
     super.dispose();
   }
 
@@ -146,6 +157,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
       remainSec: _remainSec,
       running: true,
     ));
+    unawaited(_pushHud());
     _ticker?.cancel();
     _ticker = Timer.periodic(const Duration(milliseconds: 500), (_) {
       _syncRemain();
@@ -180,6 +192,32 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
       remainSec: _remainSec,
       running: false,
     );
+    await _pushHud();
+  }
+
+  /// 把当前这一轮同步到桌面悬浮窗（暂停中也要推，才显示成「继续」）
+  Future<void> _pushHud() async {
+    if (!_hasPlan) {
+      await Hud.clearSession();
+      return;
+    }
+    if (_running) _syncRemain();
+    await Hud.pushSession(
+      title: widget.task.title,
+      total: _totalSec,
+      remain: _remainSec,
+      running: _running,
+    );
+  }
+
+  @override
+  Future<void> hudToggleTimer() async {
+    if (_running) {
+      await _pause();
+    } else {
+      if (!_hasPlan) return;
+      _start();
+    }
   }
 
   /// 把原生守护点起来。权限不齐就先问一句，不强行开始。
@@ -240,6 +278,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
     });
     // 重置等于这一轮作废，守护也别继续挂着
     unawaited(FocusGuard.end());
+    unawaited(Hud.clearSession());
   }
 
   void _chooseMinutes(int m) {
@@ -286,6 +325,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
 
   // ── 结束 / 完成 ────────────────────────────────────
   void _onTimeUp() {
+    unawaited(Hud.clearSession());
     SystemSound.play(SystemSoundType.alert);
     HapticFeedback.mediumImpact();
     _showDoneSheet(

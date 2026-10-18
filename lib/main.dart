@@ -4,11 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'data/db.dart';
+import 'models.dart';
 import 'pages/agreement.dart';
+import 'pages/focus_page.dart';
 import 'pages/home_shell.dart';
 import 'pages/penalty_page.dart';
 import 'palette.dart';
 import 'services/focus_guard.dart';
+import 'services/hud.dart';
 import 'services/notify.dart';
 import 'theme.dart';
 
@@ -31,12 +34,98 @@ Future<void> main() async {
       default:
         await Notify.i.syncTask(task);
     }
+    // 任务增删改 → 悬浮窗上的今日清单跟着变
+    unawaited(Hud.refresh());
   };
 
   // 手机重启、系统清理闹钟之后，靠启动时重排一遍补回来
   unawaited(Notify.i.resyncAll());
-
+  // 桌面悬浮窗：先把通道挂好，再补数据 / 补上次没处理完的动作
+  Hud.init();
+  Hud.onAction = (action, taskId) => _hudAction(action, taskId);
+  unawaited(_bootHud());
   runApp(PlanBoxApp());
+}
+
+/// 当前 navigator，悬浮窗点过来的动作靠它弹页面 / 弹提示
+GlobalKey<NavigatorState>? _appNav;
+
+/// 启动 / 回到前台时对齐悬浮窗：补动作、刷新清单、把开关状态对齐
+Future<void> _bootHud() async {
+  final on = (await DB.i.getSetting(Hud.settingKey)) == '1';
+  final running = await Hud.isRunning();
+  if (on && !running) {
+    // 被系统清理过 / 刚开机：按开关自动拉起来；没悬浮窗权限就先落下来
+    final ok = await Hud.start();
+    if (!ok) await DB.i.setSetting(Hud.settingKey, '0');
+  } else if (!on && running) {
+    await Hud.stop();
+  }
+  if (await Hud.isRunning()) await Hud.refresh();
+  await Hud.takeLaunch();
+}
+
+/// 悬浮窗上的一次点击
+Future<void> _hudAction(String action, int taskId) async {
+  final ctx = _appNav?.currentContext;
+  switch (action) {
+    case 'focus':
+    case 'checkin':
+      final tasks = await DB.i.tasks();
+      Task? t;
+      for (final x in tasks) {
+        if (x.id == taskId) {
+          t = x;
+          break;
+        }
+      }
+      if (t == null || ctx == null) return;
+      if (action == 'focus') {
+        final done = await FocusPage.open(ctx, t);
+        if (done == true) await Hud.refresh();
+        return;
+      }
+      final doneToday = t.lastDone != null &&
+          sameDay(
+            DateTime.fromMillisecondsSinceEpoch(t.lastDone!),
+            DateTime.now(),
+          );
+      if (doneToday) {
+        _hudToast(ctx, '「${t.title}」今天已经打过卡了');
+        return;
+      }
+      await DB.i.toggleTask(t);
+      await Hud.refresh();
+      _hudToast(ctx, '已打卡「${t.title}」');
+      break;
+    case 'toggleTimer':
+      final host = Hud.timerHost;
+      if (host == null) {
+        if (ctx != null) _hudToast(ctx, '先在 App 里打开番茄钟，悬浮窗才控得住它');
+        return;
+      }
+      await host.hudToggleTimer();
+      break;
+    case 'newTask':
+      HomeShell.goto(4);
+      break;
+    case 'alreadyDone':
+      if (ctx != null) _hudToast(ctx, '今天已经打过卡了');
+      break;
+    case 'hudOff':
+      await DB.i.setSetting(Hud.settingKey, '0');
+      if (ctx != null) _hudToast(ctx, '悬浮窗已关掉，需要时到「我的」里再开');
+      break;
+  }
+}
+
+void _hudToast(BuildContext ctx, String msg) {
+  final m = ScaffoldMessenger.maybeOf(ctx);
+  m?.clearSnackBars();
+  m?.showSnackBar(SnackBar(
+    content: Text(msg),
+    duration: const Duration(milliseconds: 1600),
+  ));
 }
 
 /// 全屏沉浸：默认把顶部状态栏（时间 / 电量那一行）藏起来。
@@ -63,6 +152,7 @@ class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _appNav = _navKey;
     _enterImmersive();
     // 启动时先看一眼上一轮是不是被偷跑了
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkViolation());
@@ -82,6 +172,8 @@ class _PlanBoxAppState extends State<PlanBoxApp> with WidgetsBindingObserver {
       _enterImmersive();
       // 从后台回来也查一次：被杀过 / 撤过权限的话，这里就能发现
       _checkViolation();
+      // 悬浮窗那边可能攒了动作，回来先补上；顺带把今日清单刷新一遍
+      unawaited(_bootHud());
     }
   }
 

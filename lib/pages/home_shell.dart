@@ -12,12 +12,35 @@ import 'timetable_page.dart';
 class HomeShell extends StatefulWidget {
   HomeShell({super.key});
 
+  /// 悬浮窗点了「新建」要把 tab 切过来，这里留一个全局入口
+  static void goto(int i) => _HomeShellState._inst?._goto(i);
+
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
-
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
+
+  /// 悬浮窗点了「新建」需要把 tab 切过来，这里留一个全局入口
+  static _HomeShellState? _inst;
+
+  @override
+  void initState() {
+    super.initState();
+    _inst = this;
+  }
+
+  @override
+  void dispose() {
+    if (_inst == this) _inst = null;
+    super.dispose();
+  }
+
+  void _goto(int i) {
+    if (i < 0 || i >= _dests.length) return;
+    setState(() => _index = i);
+  }
+
 
   // 图标选择原则：一个东西只能有一种形象，别让「课表」和「日历」都长成日历。
   // 课表 = 表格（grid_on），日历 = 月历（calendar_month），计划 = 清单（checklist）。

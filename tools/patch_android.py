@@ -47,6 +47,14 @@ SERVICE_XML = """    <service
             android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
             android:value="focus_guard" />
     </service>
+    <service
+        android:name=".HudService"
+        android:exported="false"
+        android:foregroundServiceType="specialUse">
+        <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="task_hud" />
+    </service>
 """
 
 # Android 11+ 的包可见性：不声明这条，白名单里读不到已安装应用
