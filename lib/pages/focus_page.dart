@@ -11,6 +11,7 @@ import '../palette.dart';
 import '../services/ambience.dart';
 import '../services/focus_guard.dart';
 import '../theme.dart';
+import 'permission_page.dart';
 import 'whitelist_page.dart';
 
 /// 番茄钟 / 专注倒计时。
@@ -49,6 +50,8 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
   bool _running = false;
   /// 这一轮是否已经把「专注守护」点着了（暂停/继续不重复拉起）
   bool _guardOn = false;
+  /// 只自动提醒一次权限，别每次继续都弹
+  bool _permAsked = false;
 
   bool get _hasPlan => _totalSec > 0;
   double get _progress => _totalSec == 0
@@ -115,7 +118,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
       return;
     }
     if (!mounted) return;
-    await _askPermissions();
+    if (!_permAsked) await _askPermissions();
     // 用户补完权限回来，再试一次
     if (!mounted) return;
     if (await FocusGuard.hasAllPermissions()) {
@@ -126,6 +129,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
   }
 
   Future<void> _askPermissions() async {
+    _permAsked = true;
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -150,7 +154,7 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
         ],
       ),
     );
-    if (go == true) await FocusGuard.openPermissionFlow();
+    if (go == true) await PermissionPage.open(context);
   }
 
   void _reset() {
@@ -402,11 +406,15 @@ class _FocusPageState extends State<FocusPage> with SingleTickerProviderStateMix
               ],
             ),
           ),
-          if (_guardOn)
-            Padding(
-              padding: const EdgeInsets.only(right: 2),
-              child: Icon(Icons.shield, size: 15, color: kAcc),
+          IconButton(
+            icon: Icon(
+              _guardOn ? Icons.shield : Icons.shield_outlined,
+              size: 20,
+              color: _guardOn ? kAcc : kDim,
             ),
+            tooltip: _guardOn ? '守护中（点查权限）' : '守护未开启（点去开启）',
+            onPressed: () => PermissionPage.open(context),
+          ),
           IconButton(
             icon: Icon(Icons.playlist_add_check, color: kDim, size: 20),
             tooltip: '专注白名单',

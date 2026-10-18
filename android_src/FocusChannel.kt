@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
 import android.util.Base64
@@ -35,7 +36,7 @@ class FocusChannel(
             try {
                 when (call.method) {
                     "canUsage" -> result.success(hasUsageAccess())
-                    "canOverlay" -> result.success(Settings.canDrawOverlays(ctx))
+                    "canOverlay" -> result.success(canOverlay())
                     "openUsage" -> {
                         openUsageSettings()
                         result.success(true)
@@ -54,6 +55,15 @@ class FocusChannel(
                         result.success(true)
                     }
                     "isRunning" -> result.success(OverlayService.running)
+                    "ignoringBattery" -> result.success(isIgnoringBattery())
+                    "openBattery" -> {
+                        openBatterySettings()
+                        result.success(true)
+                    }
+                    "openAppDetails" -> {
+                        openAppDetails()
+                        result.success(true)
+                    }
                     "setWhitelist" -> {
                         val list = call.argument<List<String>>("packages") ?: emptyList()
                         setWhitelist(list)
@@ -97,6 +107,71 @@ class FocusChannel(
         }
     }
 
+    /**
+     * 悬浮窗是否真的能用。
+     *
+     * 只信 Settings.canDrawOverlays 会在不少定制 ROM 上误报 false（读的是另一份开关），
+     * 所以再查一遍 AppOps 里的 OPSTR_SYSTEM_ALERT_WINDOW，两者任一为真就算给了。
+     */
+    private fun canOverlay(): Boolean {
+        try {
+            if (Settings.canDrawOverlays(ctx)) return true
+        } catch (_: Throwable) {
+            // 继续走 AppOps
+        }
+        return try {
+            val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+                ?: return false
+            val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ops.unsafeCheckOpNoThrow(
+                    AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+                    Process.myUid(), ctx.packageName,
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                ops.checkOpNoThrow(
+                    AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW,
+                    Process.myUid(), ctx.packageName,
+                )
+            }
+            mode == AppOpsManager.MODE_ALLOWED
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun isIgnoringBattery(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+            val pm = ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                ?: return true
+            pm.isIgnoringBatteryOptimizations(ctx.packageName)
+        } catch (_: Throwable) {
+            true
+        }
+    }
+
+    private fun openBatterySettings() {
+        launchFirst(
+            listOf(
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${ctx.packageName}")),
+                Intent(Settings.ACTION_SETTINGS),
+            ),
+        )
+    }
+
+    private fun openAppDetails() {
+        launchFirst(
+            listOf(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${ctx.packageName}")),
+                Intent(Settings.ACTION_SETTINGS),
+            ),
+        )
+    }
+
     private fun openUsageSettings() {
         val intents = listOf(
             Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$ctx.packageName")),
@@ -107,9 +182,12 @@ class FocusChannel(
     }
 
     private fun openOverlaySettings() {
+        // 读书郎这类定制 ROM 常常不认带 package 的那个 action，逐级退让
         val intents = listOf(
-            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$ctx.packageName")),
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")),
             Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:${ctx.packageName}")),
             Intent(Settings.ACTION_SETTINGS),
         )
         launchFirst(intents)

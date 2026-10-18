@@ -5,10 +5,10 @@ import '../services/focus_guard.dart';
 import '../services/focus_lock.dart';
 import '../theme.dart';
 
-/// 白名单管理。规则：最多 50 个，每天最多改 5 次。
+/// 白名单管理。规则：最多 50 个，每天最多保存 5 次。
 ///
-/// 应用清单和图标都由原生侧给（走 planbox/focus 通道），
-/// 所以不需要 device_apps 之类的插件，少一个原生依赖就少一份构建风险。
+/// 交互改成「先点后存」：勾选只改本地草稿，点右上角「保存」才写库并消耗一次
+/// 额度。这样点错了不用白扣次数，也避免每点一下都去写数据库。
 class WhitelistPage extends StatefulWidget {
   const WhitelistPage({super.key});
 
@@ -24,9 +24,12 @@ class WhitelistPage extends StatefulWidget {
 
 class _WhitelistPageState extends State<WhitelistPage> {
   List<LockApp> _apps = const [];
-  List<WhitelistEntry> _chosen = const [];
+  /// 正在编辑的草稿（顺序即显示顺序）
+  List<WhitelistEntry> _draft = [];
   int _editsLeft = FocusGuard.dailyEdits;
   bool _loading = true;
+  bool _dirty = false;
+  bool _saving = false;
   String _filter = '';
 
   @override
@@ -38,65 +41,106 @@ class _WhitelistPageState extends State<WhitelistPage> {
   Future<void> _load() async {
     final chosen = await FocusGuard.whitelist();
     final left = await FocusGuard.editsLeft();
-    List<LockApp> apps;
-    if (FocusLock.available) {
-      apps = await FocusLock.listApps();
-    } else {
-      apps = const [];
-    }
+    final apps = FocusLock.available ? await FocusLock.listApps() : <LockApp>[];
     if (!mounted) return;
     setState(() {
       _apps = apps;
-      _chosen = chosen;
+      _draft = List<WhitelistEntry>.from(chosen);
       _editsLeft = left;
       _loading = false;
+      _dirty = false;
     });
   }
 
-  bool _isChosen(String pkg) => _chosen.any((e) => e.package == pkg);
+  bool _isChosen(String pkg) => _draft.any((e) => e.package == pkg);
 
-  Future<void> _toggle(LockApp app) async {
+  void _toggle(LockApp app) {
     if (_loading) return;
     final chosen = _isChosen(app.package);
-    if (!chosen && _chosen.length >= FocusGuard.maxWhitelist) {
-      _toast('白名单最多 ${FocusGuard.maxWhitelist} 个，先删掉几个吧');
+    if (!chosen && _draft.length >= FocusGuard.maxWhitelist) {
+      _toast('最多 ${FocusGuard.maxWhitelist} 个，先取消几个');
+      return;
+    }
+    setState(() {
+      if (chosen) {
+        _draft = _draft.where((e) => e.package != app.package).toList();
+      } else {
+        _draft = [..._draft, WhitelistEntry(app.package, app.label)];
+      }
+      _dirty = true;
+    });
+  }
+
+  /// 保存：消耗一次当日额度，然后写库并下发给原生
+  Future<void> _save() async {
+    if (_saving) return;
+    if (!_dirty) {
+      Navigator.of(context).pop();
       return;
     }
     if (_editsLeft <= 0) {
-      _toast('今天已经改了 ${FocusGuard.dailyEdits} 次，明天再来');
+      _toast('今天已经保存了 ${FocusGuard.dailyEdits} 次，明天再来');
       return;
     }
-    if (!await FocusGuard.consumeEdit()) {
+    setState(() => _saving = true);
+    final ok = await FocusGuard.consumeEdit();
+    if (!ok) {
       if (!mounted) return;
-      setState(() => _editsLeft = 0);
-      _toast('今天已经改了 ${FocusGuard.dailyEdits} 次，明天再来');
+      setState(() {
+        _saving = false;
+        _editsLeft = 0;
+      });
+      _toast('今天已经保存了 ${FocusGuard.dailyEdits} 次，明天再来');
       return;
     }
-    final next = List<WhitelistEntry>.from(_chosen);
-    if (chosen) {
-      next.removeWhere((e) => e.package == app.package);
-    } else {
-      next.add(WhitelistEntry(app.package, app.label));
-    }
-    await FocusGuard.saveWhitelist(next);
+    await FocusGuard.saveWhitelist(_draft);
     if (!mounted) return;
     setState(() {
-      _chosen = next;
+      _saving = false;
+      _dirty = false;
       _editsLeft = _editsLeft - 1 < 0 ? 0 : _editsLeft - 1;
     });
+    _toast('已保存');
   }
 
   void _toast(String s) {
     if (!mounted) return;
     final m = ScaffoldMessenger.maybeOf(context);
-    m?.clearSnackBars();
-    m?.showSnackBar(
+    if (m == null) return;
+    m.clearSnackBars();
+    m.showSnackBar(
+      // 不要自己设 backgroundColor：主题里 SnackBar 的文字是白色的，
+      // 背景改成 kCard 会变成白底白字，看起来就是一个空白的白框。
       SnackBar(
         content: Text(s),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: kCard,
+        duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  /// 有未保存改动时确认一下再走
+  Future<bool> _confirmLeave() async {
+    if (!_dirty) return true;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: kCard,
+        title: Text('还没保存', style: TextStyle(color: kFg)),
+        content: Text('刚才的勾选不会生效，确定离开吗？',
+            style: TextStyle(color: kDim, height: 1.5)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('继续编辑', style: TextStyle(color: kAcc)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('离开', style: TextStyle(color: kDim)),
+          ),
+        ],
+      ),
+    );
+    return leave == true;
   }
 
   @override
@@ -108,141 +152,153 @@ class _WhitelistPageState extends State<WhitelistPage> {
                 a.label.toLowerCase().contains(_filter.toLowerCase()) ||
                 a.package.toLowerCase().contains(_filter.toLowerCase()))
             .toList();
-    return Scaffold(
-      backgroundColor: kBg,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final ok = await _confirmLeave();
+        if (ok && mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
         backgroundColor: kBg,
-        elevation: 0,
-        foregroundColor: kFg,
-        title: Text('专注白名单',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: kFg)),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
+        appBar: AppBar(
+          backgroundColor: kBg,
+          elevation: 0,
+          foregroundColor: kFg,
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('专注白名单',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: kFg)),
+              Text(
+                '${_draft.length}/${FocusGuard.maxWhitelist} · 今天还能保存 $_editsLeft 次',
+                style: TextStyle(fontSize: 10.5, color: kDim),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: _saving ? null : _save,
               child: Text(
-                '${_chosen.length}/${FocusGuard.maxWhitelist}',
-                style: TextStyle(fontSize: 12, color: kDim),
+                _saving ? '保存中' : '保存',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: _dirty ? kAcc : kDim,
+                ),
               ),
             ),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 14, color: kDim),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '专注时这些应用不会被拦。今天还能改 $_editsLeft 次',
-                    style: TextStyle(fontSize: 11.5, color: kDim),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: Column(
+          children: [
+            if (_draft.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final e in _draft)
+                        InputChip(
+                          label: Text(e.label,
+                              style: TextStyle(fontSize: 11, color: kFg)),
+                          backgroundColor: kAcc.withValues(alpha: 0.12),
+                          side: BorderSide(color: kAcc.withValues(alpha: 0.3)),
+                          onDeleted: () => _toggle(LockApp(e.package, e.label, null)),
+                        ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          if (_chosen.isNotEmpty)
+              ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (final e in _chosen)
-                      InputChip(
-                        label: Text(e.label,
-                            style: TextStyle(fontSize: 11, color: kFg)),
-                        backgroundColor: kAcc.withValues(alpha: 0.12),
-                        side: BorderSide(color: kAcc.withValues(alpha: 0.3)),
-                        onDeleted: _editsLeft <= 0
-                            ? null
-                            : () async {
-                                final app = LockApp(e.package, e.label, null);
-                                await _toggle(app);
-                              },
-                      ),
-                  ],
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: TextField(
+                style: TextStyle(fontSize: 13, color: kFg),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: '搜应用名或包名',
+                  hintStyle: TextStyle(fontSize: 13, color: kDim),
+                  prefixIcon: Icon(Icons.search, size: 18, color: kDim),
+                  filled: true,
+                  fillColor: kCard.withValues(alpha: 0.6),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
                 ),
+                onChanged: (v) => setState(() => _filter = v.trim()),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: TextField(
-              style: TextStyle(fontSize: 13, color: kFg),
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: '搜应用名或包名',
-                hintStyle: TextStyle(fontSize: 13, color: kDim),
-                prefixIcon: Icon(Icons.search, size: 18, color: kDim),
-                filled: true,
-                fillColor: kCard.withValues(alpha: 0.6),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: (v) => setState(() => _filter = v.trim()),
-            ),
-          ),
-          Expanded(
-            child: _loading
-                ? Center(child: CircularProgressIndicator(color: kAcc))
-                : list.isEmpty
-                    ? Center(
-                        child: Text(
-                          _apps.isEmpty
-                              ? '读不到应用列表（需要在本体 App 里运行）'
-                              : '没有匹配的应用',
-                          style: TextStyle(fontSize: 12.5, color: kDim),
+            Expanded(
+              child: _loading
+                  ? Center(child: CircularProgressIndicator(color: kAcc))
+                  : list.isEmpty
+                      ? Center(
+                          child: Text(
+                            _apps.isEmpty
+                                ? '读不到应用列表（需要在本体 App 里运行）'
+                                : '没有匹配的应用',
+                            style: TextStyle(fontSize: 12.5, color: kDim),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 24),
+                          itemCount: list.length,
+                          itemBuilder: (_, i) {
+                            final a = list[i];
+                            final on = _isChosen(a.package);
+                            return ListTile(
+                              dense: true,
+                              leading: a.icon != null
+                                  ? Image.memory(
+                                      a.icon!,
+                                      width: 34,
+                                      height: 34,
+                                      gaplessPlayback: true,
+                                      // 图标解码失败时退回一个占位图标，
+                                      // 不要让异常冒到界面上
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        Icons.android,
+                                        size: 30,
+                                        color: kDim,
+                                      ),
+                                    )
+                                  : Icon(Icons.android, size: 30, color: kDim),
+                              title: Text(
+                                a.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 13.5, color: kFg),
+                              ),
+                              subtitle: Text(
+                                a.package,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 10.5, color: kDim),
+                              ),
+                              trailing: Icon(
+                                on
+                                    ? Icons.check_circle
+                                    : Icons.radio_button_unchecked,
+                                size: 20,
+                                color:
+                                    on ? kAcc : kDim.withValues(alpha: 0.5),
+                              ),
+                              onTap: () => _toggle(a),
+                            );
+                          },
                         ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 24),
-                        itemCount: list.length,
-                        itemBuilder: (_, i) {
-                          final a = list[i];
-                          final on = _isChosen(a.package);
-                          return ListTile(
-                            dense: true,
-                            leading: a.icon != null
-                                ? Image.memory(
-                                    a.icon!,
-                                    width: 34,
-                                    height: 34,
-                                    gaplessPlayback: true,
-                                  )
-                                : Icon(Icons.android, size: 30, color: kDim),
-                            title: Text(
-                              a.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 13.5, color: kFg),
-                            ),
-                            subtitle: Text(
-                              a.package,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 10.5, color: kDim),
-                            ),
-                            trailing: Icon(
-                              on
-                                  ? Icons.check_circle
-                                  : Icons.radio_button_unchecked,
-                              size: 20,
-                              color: on ? kAcc : kDim.withValues(alpha: 0.5),
-                            ),
-                            onTap: () => _toggle(a),
-                          );
-                        },
-                      ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }

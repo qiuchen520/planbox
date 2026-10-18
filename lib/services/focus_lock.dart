@@ -60,6 +60,15 @@ class FocusLock {
 
   static Future<void> openUsageSettings() => _call<bool>('openUsage');
 
+  /// 是否已加入电池优化白名单（不加的话后台服务容易被定制 ROM 掐掉）
+  static Future<bool> ignoringBattery() async =>
+      await _call<bool>('ignoringBattery') ?? true;
+
+  static Future<void> openBatterySettings() => _call<bool>('openBattery');
+
+  /// 打开系统里的「应用信息」页，权限入口不好找时当最后兜底
+  static Future<void> openAppDetails() => _call<bool>('openAppDetails');
+
   static Future<void> openOverlaySettings() => _call<bool>('openOverlay');
 
   static Future<void> start(int minutes) =>
