@@ -257,8 +257,6 @@ class Task {
 
   static List<String> _wdCn = ['一', '二', '三', '四', '五', '六', '日'];
 
-  static const List<String> _wdCn = ['一', '二', '三', '四', '五', '六', '日'];
-
   int get _iv => repeatInterval < 1 ? 1 : repeatInterval;
 
   /// 重复锚点：第一次发生的时刻。
