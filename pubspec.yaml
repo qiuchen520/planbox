@@ -1,7 +1,7 @@
 name: planbox
 description: "PlanBox（计划盒）— 离线优先的学生计划工具：课表 / 作业 / 打卡 / 番茄钟。"
 publish_to: 'none'
-version: 0.5.3+16
+version: 0.5.4+17
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
@@ -18,6 +18,8 @@ dependencies:
   # 备份：分享导出 + 选择文件导入
   share_plus: ^10.0.2
   file_picker: ^8.1.2
+  # 番茄钟：循环播放本地生成的白噪音
+  just_audio: ^0.9.42
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -25,6 +27,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/audio/
 
 # file_picker 8.x 自己按 compileSdk 34 编译，但新版 flutter_plugin_android_lifecycle
 # 的 aar 元数据要求 compileSdk 36，直接构建会被 checkAarMetadata 拦下。

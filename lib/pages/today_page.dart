@@ -5,6 +5,7 @@ import '../models.dart';
 import '../palette.dart';
 import '../responsive.dart';
 import '../theme.dart';
+import 'focus_page.dart';
 
 class _Slot {
   final int period;
@@ -119,6 +120,13 @@ class _TodayPageState extends State<TodayPage> {
     }
   }
 
+  /// 进番茄钟。点任务不等于完成 —— 只有专注页里确认过才写库。
+  Future<void> _openFocus(Task t) async {
+    final done = await FocusPage.open(context, t);
+    if (!mounted || done != true) return;
+    await _load();
+    _toast('完成「${t.title}」');
+  }
   void _toast(String msg) {
     if (!mounted) return;
     final m = ScaffoldMessenger.maybeOf(context);
@@ -460,7 +468,7 @@ class _TodayPageState extends State<TodayPage> {
           sub.join(' · '),
           t.subject.isEmpty ? kAcc : colorForSubject(t.subject),
           Icons.check_circle_outline,
-          onTap: () => _toggle(t),
+          onTap: () => _openFocus(t),
           badge: t.priority == 2 ? '重要' : null,
           tag: '计划',
         ),
@@ -637,7 +645,7 @@ class _TodayPageState extends State<TodayPage> {
     }
 
     return InkWell(
-      onTap: () => _toggle(t),
+      onTap: () => _openFocus(t),
       child: Padding(
         padding: EdgeInsets.fromLTRB(8, 9, 12, 9),
         child: Row(

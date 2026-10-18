@@ -5,6 +5,7 @@ import '../models.dart';
 import '../palette.dart';
 import '../responsive.dart';
 import '../theme.dart';
+import 'focus_page.dart';
 
 // ══════════════════════════════════════════════════════
 // 筛选 / 排序 / 分组
@@ -122,6 +123,14 @@ class _TasksPageState extends State<TasksPage> {
   }
 
   // ── 勾选 ───────────────────────────────────────────
+  /// 进番茄钟。点任务不等于完成 —— 只有专注页里确认过才写库。
+  Future<void> _openFocus(Task t) async {
+    final done = await FocusPage.open(context, t);
+    if (!mounted || done != true) return;
+    await _load();
+    _toast('完成「${t.title}」');
+  }
+
   Future<void> _toggle(Task t) async {
     final wasRepeat = t.repeatActive;
     await DB.i.toggleTask(t);
@@ -725,7 +734,7 @@ class _TasksPageState extends State<TasksPage> {
     }
 
     return InkWell(
-      onTap: () => _edit(t),
+      onTap: () => _openFocus(t),
       onLongPress: () => _quickMenu(t),
       child: Padding(
         padding: EdgeInsets.fromLTRB(12, 10, 12, 10),
