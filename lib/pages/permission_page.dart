@@ -130,10 +130,11 @@ class _PermissionPageState extends State<PermissionPage>
           const SizedBox(height: 12),
           _card(
             title: '使用情况访问',
-            desc: '用来知道当前前台是哪个应用。这一项没有开关图标，'
-                '要进列表里找到「计划盒」再打开。',
+            desc: '用来知道当前前台是哪个应用。点下面的按钮会直接跳到'
+                '「允许查看使用情况的应用」列表页（这个页面在设置里是藏着的，'
+                '正常翻不到），找到「计划盒」打开就行。',
             ok: _usage,
-            actionLabel: '去开启',
+            actionLabel: '去列表页',
             onTap: () => _go(FocusLock.openUsageSettings),
           ),
           _card(
@@ -146,10 +147,11 @@ class _PermissionPageState extends State<PermissionPage>
           ),
           _card(
             title: '后台运行 / 电池优化',
-            desc: '把计划盒从电池优化名单里去掉，否则守护服务可能被杀掉，'
-                '之后就会被判成「偷跑」。',
+            desc: '点下面的按钮会直接弹系统申请框，选「允许」就行 —— '
+                '不用去列表里找计划盒（那个列表经常根本不显示我们）。'
+                '没豁免的话守护服务可能被杀，然后会被判成「偷跑」。',
             ok: _battery,
-            actionLabel: '去设置',
+            actionLabel: '申请不被优化',
             onTap: () => _go(FocusLock.openBatterySettings),
           ),
           _diagCard(),

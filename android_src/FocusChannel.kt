@@ -166,12 +166,34 @@ class FocusChannel(
         }
     }
 
+    /**
+     * 申请「不被电池优化」。
+     *
+     * 不去翻列表：读书郎那个「电池优化」页面只显示可优化的应用，计划盒经常
+     * 根本不在里面（ROM 过滤，或者已经被豁免了），用户会以为没成功。
+     * 直接弹系统的 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 对话框，确认一下就完事。
+     */
     private fun openBatterySettings() {
+        val pkg = ctx.packageName
+        if (isIgnoringBattery()) {
+            // 已经豁免过了，就别再弹申请框，给个能看见状态的页面
+            launchFirst(
+                listOf(
+                    Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:$pkg")),
+                    Intent(Settings.ACTION_SETTINGS),
+                ),
+            )
+            return
+        }
         launchFirst(
             listOf(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:$pkg")),
                 Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
                 Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:${ctx.packageName}")),
+                    Uri.parse("package:$pkg")),
                 Intent(Settings.ACTION_SETTINGS),
             ),
         )
@@ -187,12 +209,26 @@ class FocusChannel(
         )
     }
 
+    /**
+     * 跳到「允许查看使用情况的应用」列表页。
+     *
+     * 读书郎把这一页从设置树里藏起来了，正常点进去根本到不了，
+     * 所以先按包名带参数跳，再直接点名 Activity，最后才退回去应用信息页。
+     */
     private fun openUsageSettings() {
-        val intents = listOf(
-            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$ctx.packageName")),
-            Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS),
-            Intent(Settings.ACTION_SETTINGS),
-        )
+        val pkg = ctx.packageName
+        val intents = mutableListOf<Intent>()
+        intents.add(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, Uri.parse("package:$pkg")))
+        for (cls in listOf(
+            "com.android.settings.Settings\$UsageAccessSettingsActivity",
+            "com.android.settings.Settings\$UsageStatsSettingsActivity",
+            "com.android.settings.Settings\$AppOpsSummaryActivity",
+        )) {
+            intents.add(Intent().setClassName("com.android.settings", cls))
+        }
+        intents.add(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        intents.add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")))
+        intents.add(Intent(Settings.ACTION_SETTINGS))
         launchFirst(intents)
     }
 
