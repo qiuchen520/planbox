@@ -10,6 +10,7 @@ import '../models.dart';
 import '../palette.dart';
 import '../services/ambience.dart';
 import '../services/focus_guard.dart';
+import '../services/focus_lock.dart';
 import '../services/hud.dart';
 import '../theme.dart';
 import 'permission_page.dart';
@@ -53,6 +54,10 @@ class _FocusPageState extends State<FocusPage>
   bool _running = false;
   /// 这一轮是否已经把「专注守护」点着了（暂停/继续不重复拉起）
   bool _guardOn = false;
+  /// 守护（应用锁）总开关，跟设置里的 guard_pref 走；关掉以后开始番茄也不再拦你。
+  bool _guardPref = true;
+  /// 桌面悬浮窗当前是否开着（番茄页底部直接切）
+  bool _hudOn = false;
   /// 只自动提醒一次权限，别每次继续都弹
   bool _permAsked = false;
   /// 计时锚点：剩余秒数只在 anchor 那一刻是准的，之后按墙钟推算。
@@ -71,6 +76,7 @@ class _FocusPageState extends State<FocusPage>
     WidgetsBinding.instance.addObserver(this);
     // 悬浮窗的「暂停 / 继续」直接打到这一页
     Hud.timerHost = this;
+    unawaited(_loadPrefs());
     unawaited(_restore());
   }
 
@@ -220,9 +226,74 @@ class _FocusPageState extends State<FocusPage>
     }
   }
 
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg, style: TextStyle(color: kFg, fontSize: 12.5)),
+        backgroundColor: kCard,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(milliseconds: 1600),
+      ),
+    );
+  }
+
+  /// 读两个开关的存量状态（守护偏好 + 悬浮窗是否在跑）
+  Future<void> _loadPrefs() async {
+    final g = await DB.i.getSetting('guard_pref');
+    final on = await Hud.isRunning();
+    if (!mounted) return;
+    setState(() {
+      _guardPref = g != '0';
+      _hudOn = on;
+    });
+  }
+
+  /// 守护（应用锁）开关。开的时候如果正在计时就立刻生效。
+  Future<void> _toggleGuard() async {
+    if (_guardPref) {
+      await DB.i.setSetting('guard_pref', '0');
+      await FocusGuard.stopOnly();
+      if (mounted) {
+        setState(() {
+          _guardPref = false;
+          _guardOn = false;
+        });
+      }
+      _toast('守护已关，这一轮不拦你切应用');
+      return;
+    }
+    await DB.i.setSetting('guard_pref', '1');
+    if (mounted) setState(() => _guardPref = true);
+    _toast('守护已开');
+    if (_running) await _ensureGuard(force: true);
+  }
+
+  /// 桌面悬浮窗开关（开着就能在别的应用里看到剩余时间）
+  Future<void> _toggleHud() async {
+    if (_hudOn) {
+      await Hud.stop();
+      await DB.i.setSetting('hud_on', '0');
+      if (mounted) setState(() => _hudOn = false);
+      _toast('悬浮窗已关');
+      return;
+    }
+    if (!await Hud.canShow()) {
+      _toast('先给一下「显示在其他应用上层」权限');
+      await FocusLock.openOverlaySettings();
+      return;
+    }
+    await Hud.start();
+    await DB.i.setSetting('hud_on', '1');
+    if (mounted) setState(() => _hudOn = true);
+    await _pushHud();
+    _toast('悬浮窗已挂到桌面');
+  }
+
   /// 把原生守护点起来。权限不齐就先问一句，不强行开始。
-  Future<void> _ensureGuard() async {
+  Future<void> _ensureGuard({bool force = false}) async {
     if (_guardOn) return;
+    if (!force && !_guardPref) return;
     final minutes = _totalSec ~/ 60;
     if (await FocusGuard.begin(minutes)) {
       if (mounted) setState(() => _guardOn = true);
@@ -530,12 +601,16 @@ class _FocusPageState extends State<FocusPage>
           ),
           IconButton(
             icon: Icon(
-              _guardOn ? Icons.shield : Icons.shield_outlined,
+              _guardOn
+                  ? Icons.shield
+                  : (_guardPref ? Icons.shield_outlined : Icons.shield_moon_outlined),
               size: 20,
               color: _guardOn ? kAcc : kDim,
             ),
-            tooltip: _guardOn ? '守护中（点查权限）' : '守护未开启（点去开启）',
-            onPressed: () => PermissionPage.open(context),
+            tooltip: _guardOn
+                ? '守护中（点关掉）'
+                : (_guardPref ? '守护开着但没生效（点重试）' : '守护已关（点开启）'),
+            onPressed: () => unawaited(_toggleGuard()),
           ),
           IconButton(
             icon: Icon(Icons.playlist_add_check, color: kDim, size: 20),
@@ -646,9 +721,24 @@ class _FocusPageState extends State<FocusPage>
               ],
             ),
             const SizedBox(height: 6),
-            TextButton(
-              onPressed: _chooseCustom,
-              child: Text('改时长', style: TextStyle(fontSize: 12, color: kDim)),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                _chip('改时长', _chooseCustom,
+                    dense: true, icon: Icons.timer_outlined),
+                _chip(_guardPref ? '守护开' : '守护关',
+                    () => unawaited(_toggleGuard()),
+                    active: _guardPref,
+                    dense: true,
+                    icon: Icons.shield_outlined),
+                _chip(_hudOn ? '悬浮窗开' : '悬浮窗关',
+                    () => unawaited(_toggleHud()),
+                    active: _hudOn,
+                    dense: true,
+                    icon: Icons.picture_in_picture_alt_outlined),
+              ],
             ),
           ],
           _noiseBar(),

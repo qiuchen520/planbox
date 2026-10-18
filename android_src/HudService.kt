@@ -237,6 +237,13 @@ class HudService : Service() {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, resources.displayMetrics)
             .roundToInt()
 
+    /** 面板宽度按屏幕宽自适应：手机还是 238dp，平板宽屏不至于挤成一条 */
+    private fun panelWidth(): Int {
+        val dm = resources.displayMetrics
+        val wdp = dm.widthPixels / dm.density
+        return dp((wdp * 0.32f).coerceIn(238f, 380f))
+    }
+
     private fun round(color: Int, radius: Float): GradientDrawable =
         GradientDrawable().apply {
             setColor(color)
@@ -281,7 +288,7 @@ class HudService : Service() {
             orientation = LinearLayout.VERTICAL
             background = round(BG, 16f)
             setPadding(dp(12f), dp(9f), dp(12f), dp(10f))
-            layoutParams = FrameLayout.LayoutParams(dp(238f), WRAP_CONTENT)
+            layoutParams = FrameLayout.LayoutParams(panelWidth(), WRAP_CONTENT)
         }
 
         // 头部：时钟 + 两个小按钮，整行可拖

@@ -491,7 +491,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: Text('显示悬浮窗'),
                 subtitle: Text(_hudOn
                     ? '桌面常驻：时钟 + 今日任务 + 番茄钟'
-                    : '关着。开了之后不打开 App 也能看见进度'),
+                    : '关着。开了之后不打开 App 也能看见进度；番茄钟页面底部也能直接开关'),
                 value: _hudOn,
                 onChanged: (v) async {
                   if (v) {

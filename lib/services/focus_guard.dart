@@ -59,6 +59,13 @@ class FocusGuard {
     await FocusLock.stop();
   }
 
+  /// 只把原生守护停掉，**不动计时会话**。
+  /// 用于「计时还在跑，但不想被拦切应用」的情况。
+  static Future<void> stopOnly() async {
+    await DB.i.setSetting(_kActive, '0');
+    await FocusLock.stop();
+  }
+
   // ── 计时会话（页面重建 / 切后台回来都能接上） ──────────
   /// 存一下这一轮的进度。remaining 是「在 anchor 这一刻还剩多少秒」。
   static Future<void> saveSession({
