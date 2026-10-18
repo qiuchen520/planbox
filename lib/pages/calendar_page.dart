@@ -146,6 +146,10 @@ class _CalendarPageState extends State<CalendarPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlg) => AlertDialog(
+          // 默认左右各 40dp 外边距 + 24dp 内边距，360dp 手机上正文只剩 232dp，
+          // 里面几行都是 Row，很容易顶出去。窄屏把外边距收到 12dp。
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
           title: Text('${day.month}月${day.day}日 · 加一条计划'),
           content: SizedBox(
             width: 420,
@@ -310,15 +314,19 @@ class _CalendarPageState extends State<CalendarPage> {
                               : () => setDlg(() => repeatInterval += 1),
                           icon: Icon(Icons.add_circle_outline, size: 17),
                         ),
-                        Text(
-                          repeatKind == 1
-                              ? '天一次'
-                              : repeatKind == 3
-                                  ? '周一次'
-                                  : repeatKind == 4
-                                      ? '个月一次'
-                                      : '年一次',
-                          style: TextStyle(fontSize: 12, color: kDim),
+                        Expanded(
+                          child: Text(
+                            repeatKind == 1
+                                ? '天一次'
+                                : repeatKind == 3
+                                    ? '周一次'
+                                    : repeatKind == 4
+                                        ? '个月一次'
+                                        : '年一次',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: kDim),
+                          ),
                         ),
                       ],
                     ),
@@ -327,14 +335,17 @@ class _CalendarPageState extends State<CalendarPage> {
                     SizedBox(height: 4),
                     Row(
                       children: [
-                        Text(
-                          repeatUntil == null
-                              ? '一直重复'
-                              : '重复到 ${repeatUntil!.year}/'
-                                  '${repeatUntil!.month}/${repeatUntil!.day}',
-                          style: TextStyle(fontSize: 12, color: kDim),
+                        Expanded(
+                          child: Text(
+                            repeatUntil == null
+                                ? '一直重复'
+                                : '重复到 ${repeatUntil!.year}/'
+                                    '${repeatUntil!.month}/${repeatUntil!.day}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: kDim),
+                          ),
                         ),
-                        Spacer(),
                         TextButton(
                           onPressed: () async {
                             final d = await showDatePicker(
@@ -430,42 +441,86 @@ class _CalendarPageState extends State<CalendarPage> {
         d
     ].where((d) => _tasksOn(DateTime(_month.year, _month.month, d))
         .any((t) => !t.done)).length;
-
+    final monthLabel = '${_month.year}年 ${_month.month}月';
+    final badge = Container(
+      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: kAcc.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text('$monthCount 天有安排',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style:
+              TextStyle(fontSize: 11, color: kAcc, fontWeight: FontWeight.w600)),
+    );
+    final nav = <Widget>[
+      TextButton(
+        onPressed: _gotoToday,
+        style: TextButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          textStyle: TextStyle(fontSize: 12.5),
+        ),
+        child: Text('今天'),
+      ),
+      IconButton(
+        tooltip: '上个月',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => _shiftMonth(-1),
+        icon: Icon(Icons.chevron_left, color: kFg),
+      ),
+      IconButton(
+        tooltip: '下个月',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => _shiftMonth(1),
+        icon: Icon(Icons.chevron_right, color: kFg),
+      ),
+    ];
     return Padding(
       padding: EdgeInsets.fromLTRB(10, 10, 10, 6),
-      child: Row(
-        children: [
-          Text('计划日历',
-              style: TextStyle(
-                  fontSize: 17, fontWeight: FontWeight.w700, color: kFg)),
-          SizedBox(width: 12),
-          Text('${_month.year} 年 ${_month.month} 月',
-              style: TextStyle(fontSize: 13, color: kDim)),
-          SizedBox(width: 10),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: kAcc.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text('$monthCount 天有安排',
+      child: LayoutBuilder(builder: (ctx, box) {
+        // 原来一行里塞了标题、年月、天数徽标、今天、两个箭头，
+        // 加起来 410dp 上下，360dp 的手机必然溢色。窄屏拆成两行。
+        if (box.maxWidth < 520) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text('计划日历',
+                      style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: kFg)),
+                  Spacer(),
+                  ...nav,
+                ],
+              ),
+              Row(
+                children: [
+                  Text(monthLabel,
+                      style: TextStyle(fontSize: 13, color: kDim)),
+                  SizedBox(width: 8),
+                  Flexible(child: badge),
+                ],
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Text('计划日历',
                 style: TextStyle(
-                    fontSize: 11, color: kAcc, fontWeight: FontWeight.w600)),
-          ),
-          Spacer(),
-          TextButton(onPressed: _gotoToday, child: Text('今天')),
-          IconButton(
-            tooltip: '上个月',
-            onPressed: () => _shiftMonth(-1),
-            icon: Icon(Icons.chevron_left, color: kFg),
-          ),
-          IconButton(
-            tooltip: '下个月',
-            onPressed: () => _shiftMonth(1),
-            icon: Icon(Icons.chevron_right, color: kFg),
-          ),
-        ],
-      ),
+                    fontSize: 17, fontWeight: FontWeight.w700, color: kFg)),
+            SizedBox(width: 12),
+            Text(monthLabel, style: TextStyle(fontSize: 13, color: kDim)),
+            SizedBox(width: 10),
+            badge,
+            Spacer(),
+            ...nav,
+          ],
+        );
+      }),
     );
   }
 
@@ -610,6 +665,8 @@ class _CalendarPageState extends State<CalendarPage> {
               Spacer(),
               if (tasks.isNotEmpty && undone.isEmpty)
                 Text('全部完成',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 9.5, color: kOk)),
             ],
           ),
@@ -634,17 +691,26 @@ class _CalendarPageState extends State<CalendarPage> {
         children: [
           Row(
             children: [
-              Text(_dateLabel(_selected),
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: kFg)),
-              SizedBox(width: 8),
-              Text(
-                list.isEmpty ? '没有安排' : '$left 项待办 / 共 ${list.length} 项',
-                style: TextStyle(fontSize: 11.5, color: kDim),
+              // 日期 + 待办数交给 Wrap：宽度不够时自己掉到第二行，
+              // 不会把右边的「加计划」按钮顶出屏幕。
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 2,
+                  children: [
+                    Text(_dateLabel(_selected),
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: kFg)),
+                    Text(
+                      list.isEmpty ? '没有安排' : '$left 项待办 / 共 ${list.length} 项',
+                      style: TextStyle(fontSize: 11.5, color: kDim),
+                    ),
+                  ],
+                ),
               ),
-              Spacer(),
               FilledButton.icon(
                 onPressed: () => _addTask(_selected),
                 icon: Icon(Icons.add, size: 16),
@@ -732,8 +798,12 @@ class _CalendarPageState extends State<CalendarPage> {
                   Row(
                     children: [
                       if (t.subject.isNotEmpty)
-                        Text(t.subject,
-                            style: TextStyle(fontSize: 10.5, color: kDim)),
+                        Flexible(
+                            child: Text(t.subject,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style:
+                                    TextStyle(fontSize: 10.5, color: kDim))),
                       if (t.subject.isNotEmpty && d != null)
                         Text(' · ', style: TextStyle(color: kFaint)),
                       if (d != null)
