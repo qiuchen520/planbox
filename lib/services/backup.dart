@@ -143,6 +143,10 @@ class Backup {
       overrides: overrides,
       tasks: tasks,
       settings: settings,
+      // 老备份里没有这三张表，_rows 会给出空列表，恢复照常能跑
+      taskExceptions: _rows(data['task_exceptions']),
+      checkins: _rows(data['checkins']),
+      reviews: _rows(data['reviews']),
     );
 
     // 恢复后通知配置变了，重新读一遍并整体排期

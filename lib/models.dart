@@ -125,6 +125,54 @@ class Subtask {
       Subtask((m['t'] ?? '') as String, (m['d'] ?? false) == true);
 }
 
+/// 把一天压成一个整数（yyyyMMdd），用来当「某一次」的键。
+/// 用日期而不是时间戳，是因为「这一次」指的是哪一天，跟着几点无关。
+int dayKeyOf(DateTime d) => d.year * 10000 + d.month * 100 + d.day;
+DateTime dayOfKey(int key) =>
+    DateTime(key ~/ 10000, (key ~/ 100) % 100, key % 100);
+
+/// 重复计划里的「单次例外」：跳过这一次，或者把这一次挪到别的时间。
+///
+/// 只影响 [day] 那一天的那一次，规则本身不动 —— 和日历 App 里的
+/// 「仅此事件」是同一个概念。
+class TaskException {
+  static const kindSkip = 1; // 这一次不做了
+  static const kindMove = 2; // 这一次改到 newAt
+
+  int? id;
+  int taskId;
+  int day; // yyyyMMdd，被改动的那一次原本的日期
+  int kind;
+  int? newAt; // kind == kindMove 时的新时刻（毫秒）
+
+  TaskException({
+    this.id,
+    required this.taskId,
+    required this.day,
+    required this.kind,
+    this.newAt,
+  });
+
+  bool get isSkip => kind == kindSkip;
+  bool get isMove => kind == kindMove && newAt != null;
+
+  Map<String, Object?> toMap() => {
+        if (id != null) 'id': id,
+        'task_id': taskId,
+        'day': day,
+        'kind': kind,
+        'new_at': newAt,
+      };
+
+  static TaskException fromMap(Map<String, Object?> m) => TaskException(
+        id: m['id'] as int?,
+        taskId: (m['task_id'] ?? 0) as int,
+        day: (m['day'] ?? 0) as int,
+        kind: (m['kind'] ?? 1) as int,
+        newAt: m['new_at'] as int?,
+      );
+}
+
 class Task {
   int? id;
   String title;
@@ -147,6 +195,8 @@ class Task {
   List<Subtask> subtasks; // 子步骤
   int doneCount; // 累计完成次数（打卡统计）
   int? lastDone; // 最近一次完成时间
+  /// 单次例外（跳过/挪时间）。不参与 task 表读写，由 DB 单独查出来挂上。
+  List<TaskException> exceptions;
 
   Task({
     this.id,
@@ -168,8 +218,10 @@ class Task {
     List<Subtask>? subtasks,
     this.doneCount = 0,
     this.lastDone,
+    List<TaskException>? exceptions,
   })  : createdAt = createdAt ?? DateTime.now().millisecondsSinceEpoch,
-        subtasks = subtasks ?? <Subtask>[];
+        subtasks = subtasks ?? <Subtask>[],
+        exceptions = exceptions ?? <TaskException>[];
 
   Map<String, Object?> toMap() => {
         if (id != null) 'id': id,
@@ -352,11 +404,33 @@ class Task {
     return target.isBefore(end);
   }
 
+  /// [day] 那一天有没有被单次例外改掉（键是那一次原本的日期）
+  TaskException? exceptionOn(DateTime day) {
+    final k = dayKeyOf(day);
+    for (final e in exceptions) {
+      if (e.day == k) return e;
+    }
+    return null;
+  }
+
+  /// 有没有某一次被「挪」到 [day] 这一天了
+  TaskException? movedOn(DateTime day) {
+    final k = dayKeyOf(day);
+    for (final e in exceptions) {
+      if (!e.isMove) continue;
+      final t = DateTime.fromMillisecondsSinceEpoch(e.newAt!);
+      if (dayKeyOf(t) == k) return e;
+    }
+    return null;
+  }
+
   /// 这条计划在 [day] 那天是否需要处理（日历视图用）。
   ///
   /// 覆盖三种情况：开始日 / 截止日 / 重复日展开。
   bool occursOn(DateTime day) {
     final target = _dateOnly(day);
+    // ① 有某一次被挪到这一天：照样要显示
+    if (movedOn(target) != null) return true;
     var hit = false;
     if (startAt != null) {
       final s = DateTime.fromMillisecondsSinceEpoch(startAt!);
@@ -374,11 +448,22 @@ class Task {
       final d = DateTime.fromMillisecondsSinceEpoch(dueAt!);
       hit = _dateOnly(d) == target;
     }
-    return hit;
+    if (!hit) return false;
+    // ② 规则命中了，但这天的那一次被跳过 / 被挪走了
+    final ex = exceptionOn(target);
+    if (ex != null) {
+      if (ex.isSkip) return false;
+      if (ex.isMove) return false; // 已经在 movedOn 里按新日子显示过
+    }
+    return true;
   }
 
   /// [day] 那天如果要执行，具体是哪一刻（沿用开始时间的时分）。
   DateTime? occurrenceOn(DateTime day) {
+    final target = _dateOnly(day);
+    // 被挪过来的那一次，用新时间
+    final mv = movedOn(target);
+    if (mv != null) return DateTime.fromMillisecondsSinceEpoch(mv.newAt!);
     if (startAt == null) return null;
     if (!occursOn(day)) return null;
     final s = DateTime.fromMillisecondsSinceEpoch(startAt!);
@@ -389,15 +474,26 @@ class Task {
   ///
   /// 逐日扫，最多 800 天（够覆盖「每 2 年」），慢不到哪里去，
   /// 但比在各种日历算法里写特例可靠得多。
+  /// 单次例外也在这里处理：跳过的那天不算，挪走的那次按新时间算。
   int nextOccurrence(int fromMs) {
     if (repeatKind <= 0) return fromMs;
     final a = DateTime.fromMillisecondsSinceEpoch(anchorMs);
     final from = DateTime.fromMillisecondsSinceEpoch(fromMs);
     for (var i = 1; i <= 800; i++) {
       final day = DateTime(from.year, from.month, from.day + i);
+      // 被挪到这一天的那一次优先
+      final mv = movedOn(day);
+      if (mv != null && mv.newAt! > fromMs) return mv.newAt!;
       if (!_matchesRepeat(day)) continue;
-      final cand = DateTime(day.year, day.month, day.day, a.hour, a.minute);
-      if (cand.millisecondsSinceEpoch > fromMs) return cand.millisecondsSinceEpoch;
+      final ex = exceptionOn(day);
+      if (ex != null && ex.isSkip) continue;
+      var cand = DateTime(day.year, day.month, day.day, a.hour, a.minute);
+      if (ex != null && ex.isMove && ex.newAt != null) {
+        cand = DateTime.fromMillisecondsSinceEpoch(ex.newAt!);
+      }
+      if (cand.millisecondsSinceEpoch > fromMs) {
+        return cand.millisecondsSinceEpoch;
+      }
     }
     return fromMs;
   }

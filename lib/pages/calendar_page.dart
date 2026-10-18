@@ -6,6 +6,8 @@ import '../palette.dart';
 import '../responsive.dart';
 import '../theme.dart';
 
+import '../services/occurrence_actions.dart';
+
 /// 计划日历：按月看「哪一天有要做的事」，点某一天看当天清单。
 /// 做的事和 Tasks 页共用一张表，两边改完都会重新读库。
 class CalendarPage extends StatefulWidget {
@@ -677,7 +679,17 @@ class _CalendarPageState extends State<CalendarPage> {
     final d = t.startDt ?? t.dueDt;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onLongPress: () => _delete(t),
+      // 重复计划长按：只改「这一天」的这一次；普通计划还是长按删除
+      onLongPress: t.isRepeating && t.id != null
+          ? () async {
+              final ok = await OccurrenceActions.showMenu(
+                context,
+                t,
+                focusDay: _selected,
+              );
+              if (ok) await _load();
+            }
+          : () => _delete(t),
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: 5),
         child: Row(

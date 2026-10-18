@@ -6,6 +6,7 @@ import '../palette.dart';
 import '../responsive.dart';
 import '../theme.dart';
 import 'focus_page.dart';
+import '../services/occurrence_actions.dart';
 
 // ══════════════════════════════════════════════════════
 // 筛选 / 排序 / 分组
@@ -257,6 +258,22 @@ class _TasksPageState extends State<TasksPage> {
               title: Text('编辑详情'),
               onTap: () => Navigator.pop(ctx, 'edit'),
             ),
+            if (t.isRepeating && t.id != null)
+              ListTile(
+                leading: Icon(Icons.event_busy_outlined, color: kWarn),
+                title: Text('跳过下一次'),
+                subtitle: Text('只跳过这一次，${t.repeatLabel}的规则不变',
+                    style: TextStyle(fontSize: 11.5, color: kFaint)),
+                onTap: () => Navigator.pop(ctx, 'skipNext'),
+              ),
+            if (t.isRepeating && t.id != null)
+              ListTile(
+                leading: Icon(Icons.schedule_outlined, color: kAcc),
+                title: Text('下一次改时间'),
+                subtitle: Text('只挪这一次，规则不变',
+                    style: TextStyle(fontSize: 11.5, color: kFaint)),
+                onTap: () => Navigator.pop(ctx, 'moveNext'),
+              ),
             ListTile(
               leading: Icon(Icons.delete_outline, color: kDanger),
               title: Text('删除', style: TextStyle(color: kDanger)),
@@ -290,6 +307,13 @@ class _TasksPageState extends State<TasksPage> {
         break;
       case 'edit':
         await _edit(t);
+        break;
+      case 'skipNext':
+      case 'moveNext':
+        // 打开「这一次」菜单，动作由用户在里面再点一次，
+        // 免得长按菜单和它的意图重叠得太隐晦
+        await OccurrenceActions.showMenu(context, t);
+        await _load();
         break;
       case 'delete':
         if (t.id != null) await DB.i.deleteTask(t.id!);

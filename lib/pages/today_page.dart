@@ -6,6 +6,7 @@ import '../palette.dart';
 import '../responsive.dart';
 import '../theme.dart';
 import 'focus_page.dart';
+import '../services/occurrence_actions.dart';
 
 class _Slot {
   final int period;
@@ -651,6 +652,14 @@ class _TodayPageState extends State<TodayPage> {
 
     return InkWell(
       onTap: () => _openFocus(t),
+      // 长按：重复计划可以只跳过/只改这一次，规则本身不动
+      onLongPress: t.isRepeating && t.id != null
+          ? () async {
+              final ok =
+                  await OccurrenceActions.showMenu(context, t, focusDay: DateTime.now());
+              if (ok) await _load();
+            }
+          : null,
       child: Padding(
         padding: EdgeInsets.fromLTRB(8, 9, 12, 9),
         child: Row(
