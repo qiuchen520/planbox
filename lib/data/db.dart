@@ -19,7 +19,7 @@ class DB {
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'planbox.db'),
-      version: 3,
+      version: 4,
       onCreate: (db, v) async {
         await db.execute('''CREATE TABLE lesson(
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +47,8 @@ class DB {
           repeat_kind INTEGER NOT NULL DEFAULT 0,
           repeat_days INTEGER NOT NULL DEFAULT 0,
           repeat_until INTEGER,
+          repeat_interval INTEGER NOT NULL DEFAULT 1,
+          repeat_anchor INTEGER,
           subtasks TEXT NOT NULL DEFAULT '',
           done_count INTEGER NOT NULL DEFAULT 0,
           last_done INTEGER)''');
@@ -98,6 +100,15 @@ class DB {
             "ALTER TABLE task ADD COLUMN subtasks TEXT NOT NULL DEFAULT ''",
             'ALTER TABLE task ADD COLUMN done_count INTEGER NOT NULL DEFAULT 0',
             'ALTER TABLE task ADD COLUMN last_done INTEGER',
+          ];
+          for (final c in cols) {
+            await tryExec(c);
+          }
+        }
+        if (oldV < 4) {
+          const cols = [
+            'ALTER TABLE task ADD COLUMN repeat_interval INTEGER NOT NULL DEFAULT 1',
+            'ALTER TABLE task ADD COLUMN repeat_anchor INTEGER',
           ];
           for (final c in cols) {
             await tryExec(c);

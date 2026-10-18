@@ -135,6 +135,10 @@ class _CalendarPageState extends State<CalendarPage> {
     var hour = 20;
     var minute = 0;
     var priority = 1;
+    var repeatKind = 0;
+    var repeatDays = 0;
+    var repeatInterval = 1;
+    DateTime? repeatUntil;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -226,6 +230,132 @@ class _CalendarPageState extends State<CalendarPage> {
                       ),
                     ],
                   ),
+                  SizedBox(height: 12),
+                  // 重复规则 —— 这一块以前完全没有，导致日历里加的计划
+                  // 永远只是一次性的，没法安排「每周三 19:00」这种。
+                  Text('重复', style: TextStyle(fontSize: 12, color: kDim)),
+                  SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final e in const [
+                        MapEntry(0, '不重复'),
+                        MapEntry(1, '每天'),
+                        MapEntry(2, '工作日'),
+                        MapEntry(3, '每周'),
+                        MapEntry(4, '每月'),
+                        MapEntry(5, '每年'),
+                      ])
+                        ChoiceChip(
+                          label: Text(e.value, style: TextStyle(fontSize: 12)),
+                          selected: repeatKind == e.key,
+                          onSelected: (_) => setDlg(() {
+                            repeatKind = e.key;
+                            repeatInterval = 1;
+                            if (repeatKind == 3) {
+                              repeatDays = 1 << (day.weekday - 1);
+                            }
+                          }),
+                        ),
+                    ],
+                  ),
+                  if (repeatKind == 3) ...[
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ChoiceChip(
+                          label: Text('周末', style: TextStyle(fontSize: 12)),
+                          selected: repeatDays == 0x60,
+                          onSelected: (_) => setDlg(() => repeatDays = 0x60),
+                        ),
+                        for (var i = 0; i < 7; i++)
+                          ChoiceChip(
+                            label: Text(
+                              '周${['一', '二', '三', '四', '五', '六', '日'][i]}',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            selected: repeatDays & (1 << i) != 0,
+                            onSelected: (_) =>
+                                setDlg(() => repeatDays ^= (1 << i)),
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (repeatKind == 1 ||
+                      repeatKind == 3 ||
+                      repeatKind == 4 ||
+                      repeatKind == 5) ...[
+                    SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text('每', style: TextStyle(fontSize: 12, color: kDim)),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          onPressed: repeatInterval <= 1
+                              ? null
+                              : () => setDlg(() => repeatInterval -= 1),
+                          icon: Icon(Icons.remove_circle_outline, size: 17),
+                        ),
+                        Text('$repeatInterval',
+                            style: TextStyle(fontSize: 13)),
+                        IconButton(
+                          visualDensity: VisualDensity.compact,
+                          onPressed: repeatInterval >= 30
+                              ? null
+                              : () => setDlg(() => repeatInterval += 1),
+                          icon: Icon(Icons.add_circle_outline, size: 17),
+                        ),
+                        Text(
+                          repeatKind == 1
+                              ? '天一次'
+                              : repeatKind == 3
+                                  ? '周一次'
+                                  : repeatKind == 4
+                                      ? '个月一次'
+                                      : '年一次',
+                          style: TextStyle(fontSize: 12, color: kDim),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (repeatKind != 0) ...[
+                    SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(
+                          repeatUntil == null
+                              ? '一直重复'
+                              : '重复到 ${repeatUntil!.year}/'
+                                  '${repeatUntil!.month}/${repeatUntil!.day}',
+                          style: TextStyle(fontSize: 12, color: kDim),
+                        ),
+                        Spacer(),
+                        TextButton(
+                          onPressed: () async {
+                            final d = await showDatePicker(
+                              context: ctx,
+                              initialDate:
+                                  repeatUntil ?? day.add(Duration(days: 60)),
+                              firstDate: day,
+                              lastDate: DateTime(2100),
+                            );
+                            if (d != null) setDlg(() => repeatUntil = d);
+                          },
+                          child: Text('结束日期',
+                              style: TextStyle(fontSize: 12)),
+                        ),
+                        if (repeatUntil != null)
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => setDlg(() => repeatUntil = null),
+                            icon: Icon(Icons.close, size: 15),
+                          ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -247,11 +377,18 @@ class _CalendarPageState extends State<CalendarPage> {
       return;
     }
     final start = DateTime(day.year, day.month, day.day, hour, minute);
+    var mask = repeatDays;
+    if (repeatKind == 3 && mask == 0) mask = 1 << (day.weekday - 1);
     final t = Task(
       title: s,
       subject: subject,
       startAt: start.millisecondsSinceEpoch,
       priority: priority,
+      repeatKind: repeatKind,
+      repeatDays: repeatKind == 3 ? mask : 0,
+      repeatInterval: repeatKind == 0 ? 1 : repeatInterval,
+      repeatAnchor: repeatKind == 0 ? null : start.millisecondsSinceEpoch,
+      repeatUntil: repeatUntil?.millisecondsSinceEpoch,
     );
     await DB.i.saveTask(t);
     await _load();

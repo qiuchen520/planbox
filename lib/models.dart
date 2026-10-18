@@ -142,6 +142,8 @@ class Task {
   int repeatKind; // 0 不重复 / 1 每天 / 2 工作日 / 3 每周指定日
   int repeatDays; // 位掩码：bit0=周一 … bit6=周日
   int? repeatUntil; // 重复截止（毫秒，空=一直重复）
+  int repeatInterval; // 间隔：每 N 天/周/月/年，0 或 1 当 1
+  int? repeatAnchor; // 重复锚点：第一次发生的时刻（打卡后 startAt 会滚，锚点不变）
   List<Subtask> subtasks; // 子步骤
   int doneCount; // 累计完成次数（打卡统计）
   int? lastDone; // 最近一次完成时间
@@ -161,6 +163,8 @@ class Task {
     this.repeatKind = 0,
     this.repeatDays = 0,
     this.repeatUntil,
+    this.repeatInterval = 1,
+    this.repeatAnchor,
     List<Subtask>? subtasks,
     this.doneCount = 0,
     this.lastDone,
@@ -182,6 +186,8 @@ class Task {
         'repeat_kind': repeatKind,
         'repeat_days': repeatDays,
         'repeat_until': repeatUntil,
+        'repeat_interval': repeatInterval,
+        'repeat_anchor': repeatAnchor,
         'subtasks': jsonEncode(subtasks.map((s) => s.toJson()).toList()),
         'done_count': doneCount,
         'last_done': lastDone,
@@ -202,6 +208,8 @@ class Task {
         repeatKind: (m['repeat_kind'] ?? 0) as int,
         repeatDays: (m['repeat_days'] ?? 0) as int,
         repeatUntil: m['repeat_until'] as int?,
+        repeatInterval: (m['repeat_interval'] ?? 1) as int,
+        repeatAnchor: m['repeat_anchor'] as int?,
         subtasks: _decodeSubs(m['subtasks']),
         doneCount: (m['done_count'] ?? 0) as int,
         lastDone: m['last_done'] as int?,
@@ -249,57 +257,93 @@ class Task {
 
   static List<String> _wdCn = ['一', '二', '三', '四', '五', '六', '日'];
 
+  static const List<String> _wdCn = ['一', '二', '三', '四', '五', '六', '日'];
+
+  int get _iv => repeatInterval < 1 ? 1 : repeatInterval;
+
+  /// 重复锚点：第一次发生的时刻。
+  ///
+  /// 单独存一份的原因：打卡后 startAt 会滚到下一次，如果拿新的 startAt 当锚点，
+  /// 「每 2 周」会退化成「每周」、「每月」会跟着日期乱飘。
+  int get anchorMs => repeatAnchor ?? startAt ?? 0;
+
+  String get repeatUnit => switch (repeatKind) {
+        1 => '天',
+        3 => '周',
+        4 => '个月',
+        5 => '年',
+        _ => '',
+      };
+
   String get repeatLabel {
+    final sd = startDt;
     switch (repeatKind) {
       case 1:
-        return '每天';
+        return _iv == 1 ? '每天' : '每 $_iv 天';
       case 2:
         return '工作日';
       case 3:
-        final mask = repeatDays == 0 ? 0 : repeatDays;
-        if (mask == 0) return '每周';
+        final mask =
+            repeatDays == 0 ? (1 << ((sd?.weekday ?? 1) - 1)) : repeatDays;
+        final head = _iv == 1 ? '每周' : '每 $_iv 周';
+        if (mask == 0x7F) return _iv == 1 ? '每天' : '$head（每天）';
+        if (mask == 0x60) return _iv == 1 ? '每周末' : '$head（周末）';
+        if (mask == 0x1F) return _iv == 1 ? '工作日' : '$head（工作日）';
         final parts = <String>[];
         for (var i = 0; i < 7; i++) {
           if (mask & (1 << i) != 0) parts.add(_wdCn[i]);
         }
-        if (parts.length == 7) return '每天';
-        if (parts.length == 5 &&
-            mask == 0x1F) {
-          return '工作日';
-        }
-        return '周${parts.join('·')}';
+        return parts.isEmpty ? head : '$head${parts.join('·')}';
+      case 4:
+        final d = sd?.day ?? 1;
+        return _iv == 1 ? '每月 $d 日' : '每 $_iv 个月 $d 日';
+      case 5:
+        final m = sd?.month ?? 1;
+        final d = sd?.day ?? 1;
+        return _iv == 1 ? '每年 $m 月 $d 日' : '每 $_iv 年的 $m 月 $d 日';
       default:
         return '';
     }
   }
 
-  /// 从 [fromMs] 推算下一次执行时刻
-  int nextOccurrence(int fromMs) {
-    final d = DateTime.fromMillisecondsSinceEpoch(fromMs);
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  static DateTime _mondayOf(DateTime d) {
+    final x = _dateOnly(d);
+    return x.subtract(Duration(days: x.weekday - 1));
+  }
+
+  /// [day] 是否落在重复规则上（只看规则本身，不看 repeatUntil 和开始之前）。
+  bool _matchesRepeat(DateTime day) {
+    final a = DateTime.fromMillisecondsSinceEpoch(anchorMs);
+    final ad = _dateOnly(a);
+    final t = _dateOnly(day);
+    if (t.isBefore(ad)) return false;
+    final iv = _iv;
     switch (repeatKind) {
-      case 1:
-        return DateTime(d.year, d.month, d.day + 1, d.hour, d.minute)
-            .millisecondsSinceEpoch;
-      case 2:
-        var t = DateTime(d.year, d.month, d.day + 1, d.hour, d.minute);
-        var guard = 0;
-        while (t.weekday > 5 && guard < 10) {
-          t = DateTime(t.year, t.month, t.day + 1, t.hour, t.minute);
-          guard++;
-        }
-        return t.millisecondsSinceEpoch;
-      case 3:
-        final mask = repeatDays == 0 ? (1 << (d.weekday - 1)) : repeatDays;
-        for (var i = 1; i <= 7; i++) {
-          final n = DateTime(d.year, d.month, d.day + i, d.hour, d.minute);
-          if (mask & (1 << (n.weekday - 1)) != 0) {
-            return n.millisecondsSinceEpoch;
-          }
-        }
-        return DateTime(d.year, d.month, d.day + 7, d.hour, d.minute)
-            .millisecondsSinceEpoch;
+      case 1: // 每 N 天
+        return t.difference(ad).inDays % iv == 0;
+      case 2: // 工作日
+        return t.weekday <= 5;
+      case 3: // 每 N 周里的指定星期
+        final mask = repeatDays == 0 ? (1 << (a.weekday - 1)) : repeatDays;
+        if (mask & (1 << (t.weekday - 1)) == 0) return false;
+        final weeks = _mondayOf(t).difference(_mondayOf(ad)).inDays ~/ 7;
+        return weeks < 0 ? false : weeks % iv == 0;
+      case 4: // 每 N 个月的某一天
+        final months = (t.year - ad.year) * 12 + (t.month - ad.month);
+        if (months < 0 || months % iv != 0) return false;
+        final lastDay = DateTime(t.year, t.month + 1, 0).day;
+        // 31 号的规则碰上 30 天的月份，就落到那个月最后一天，别直接跳过
+        return t.day == ad.day || (ad.day > lastDay && t.day == lastDay);
+      case 5: // 每 N 年的某月某日
+        final years = t.year - ad.year;
+        if (years < 0 || years % iv != 0) return false;
+        final lastDay = DateTime(t.year, ad.month + 1, 0).day;
+        return t.month == ad.month &&
+            (t.day == ad.day || (ad.day > lastDay && t.day == lastDay));
       default:
-        return fromMs;
+        return false;
     }
   }
 
@@ -314,39 +358,51 @@ class Task {
   ///
   /// 覆盖三种情况：开始日 / 截止日 / 重复日展开。
   bool occursOn(DateTime day) {
-    final target = DateTime(day.year, day.month, day.day);
+    final target = _dateOnly(day);
     var hit = false;
     if (startAt != null) {
       final s = DateTime.fromMillisecondsSinceEpoch(startAt!);
-      final sd = DateTime(s.year, s.month, s.day);
+      final sd = _dateOnly(s);
       if (!target.isBefore(sd)) {
         if (!isRepeating) {
           hit = sd == target;
         } else if (repeatUntil == null ||
             _beforeEndOfDay(repeatUntil!, target)) {
-          switch (repeatKind) {
-            case 1:
-              hit = true;
-              break;
-            case 2:
-              hit = target.weekday <= 5;
-              break;
-            case 3:
-              final mask =
-                  repeatDays == 0 ? (1 << (s.weekday - 1)) : repeatDays;
-              hit = (mask & (1 << (target.weekday - 1))) != 0;
-              break;
-          }
+          hit = _matchesRepeat(target);
         }
       }
     }
     if (!hit && dueAt != null) {
       final d = DateTime.fromMillisecondsSinceEpoch(dueAt!);
-      hit = DateTime(d.year, d.month, d.day) == target;
+      hit = _dateOnly(d) == target;
     }
     return hit;
   }
 
+  /// [day] 那天如果要执行，具体是哪一刻（沿用开始时间的时分）。
+  DateTime? occurrenceOn(DateTime day) {
+    if (startAt == null) return null;
+    if (!occursOn(day)) return null;
+    final s = DateTime.fromMillisecondsSinceEpoch(startAt!);
+    return DateTime(day.year, day.month, day.day, s.hour, s.minute);
+  }
+
+  /// 从 [fromMs] 之后推算下一次执行时刻。
+  ///
+  /// 逐日扫，最多 800 天（够覆盖「每 2 年」），慢不到哪里去，
+  /// 但比在各种日历算法里写特例可靠得多。
+  int nextOccurrence(int fromMs) {
+    if (repeatKind <= 0) return fromMs;
+    final a = DateTime.fromMillisecondsSinceEpoch(anchorMs);
+    final from = DateTime.fromMillisecondsSinceEpoch(fromMs);
+    for (var i = 1; i <= 800; i++) {
+      final day = DateTime(from.year, from.month, from.day + i);
+      if (!_matchesRepeat(day)) continue;
+      final cand = DateTime(day.year, day.month, day.day, a.hour, a.minute);
+      if (cand.millisecondsSinceEpoch > fromMs) return cand.millisecondsSinceEpoch;
+    }
+    return fromMs;
+  }
   /// 打完卡后推进到下一次；返回 true 表示这一条彻底结束了
   bool advanceAfterDone({DateTime? now}) {
     final n = now ?? DateTime.now();
@@ -356,8 +412,9 @@ class Task {
       done = true;
       return true;
     }
-    final base = startAt!;
-    final next = nextOccurrence(base);
+    repeatAnchor ??= startAt;
+    // 从「现在」往后找，避免 App 很久没开时一次只往前挪一天
+    final next = nextOccurrence(n.millisecondsSinceEpoch);
     if (repeatUntil != null && next > repeatUntil!) {
       done = true;
       return true;

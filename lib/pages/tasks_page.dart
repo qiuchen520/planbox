@@ -855,6 +855,7 @@ class _TaskEditorState extends State<_TaskEditor> {
   late int _estimate;
   late int _repeatKind;
   late int _repeatDays;
+  late int _repeatInterval;
   late List<Subtask> _subs;
   DateTime? _start;
   DateTime? _due;
@@ -875,6 +876,7 @@ class _TaskEditorState extends State<_TaskEditor> {
     _estimate = t?.estimate ?? 0;
     _repeatKind = t?.repeatKind ?? 0;
     _repeatDays = t?.repeatDays ?? 0;
+    _repeatInterval = t?.repeatInterval ?? 1;
     _subs = (t?.subtasks ?? <Subtask>[])
         .map((s) => Subtask(s.title, s.done))
         .toList();
@@ -921,6 +923,25 @@ class _TaskEditorState extends State<_TaskEditor> {
     return DateTime(d.year, d.month, d.day, t?.hour ?? 20, t?.minute ?? 0);
   }
 
+  /// 重复锚点：新建时就是开始时间；改过的开始时间要跟着换锚点，
+  /// 否则「每 2 周」会从旧的锚点算，日期看着对不上。
+  String get _repeatUnitCn => switch (_repeatKind) {
+        1 => '天',
+        3 => '周',
+        4 => '个月',
+        5 => '年',
+        _ => '',
+      };
+  int? _repeatAnchorOf(Task? base) {
+    if (_inPool || _repeatKind == 0) return null;
+    final start = _start?.millisecondsSinceEpoch;
+    if (start == null) return base?.repeatAnchor;
+    if (base == null) return start;
+    if (base.startAt == start && base.repeatAnchor != null) {
+      return base.repeatAnchor;
+    }
+    return start;
+  }
   void _save() {
     final name = _title.text.trim();
     if (name.isEmpty) {
@@ -944,6 +965,8 @@ class _TaskEditorState extends State<_TaskEditor> {
       ..dueAt = _due?.millisecondsSinceEpoch
       ..repeatKind = _inPool ? 0 : _repeatKind
       ..repeatDays = _repeatKind == 3 ? mask : 0
+      ..repeatInterval = _repeatKind == 0 ? 1 : _repeatInterval
+      ..repeatAnchor = _repeatAnchorOf(base)
       ..repeatUntil = _repeatKind == 0 ? null : _repeatUntil?.millisecondsSinceEpoch
       ..subtasks = _subs.where((s) => s.title.trim().isNotEmpty).toList();
     Navigator.pop(context, _Res(t));
@@ -1129,26 +1152,107 @@ class _TaskEditorState extends State<_TaskEditor> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            SegmentedButton<int>(
-                              segments: [
-                                ButtonSegment(value: 0, label: Text('不重复')),
-                                ButtonSegment(value: 1, label: Text('每天')),
-                                ButtonSegment(value: 2, label: Text('工作日')),
-                                ButtonSegment(value: 3, label: Text('每周')),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                for (final e in const [
+                                  MapEntry(0, '不重复'),
+                                  MapEntry(1, '每天'),
+                                  MapEntry(2, '工作日'),
+                                  MapEntry(3, '每周'),
+                                  MapEntry(4, '每月'),
+                                  MapEntry(5, '每年'),
+                                ])
+                                  _PickChip(
+                                    label: e.value,
+                                    selected: _repeatKind == e.key,
+                                    color: kAcc,
+                                    onTap: () => setState(() {
+                                      _repeatKind = e.key;
+                                      _repeatInterval = 1;
+                                      if (_repeatKind == 3 && _start != null) {
+                                        _repeatDays = 1 <<
+                                            (_start!.weekday - 1);
+                                      }
+                                    }),
+                                  ),
                               ],
-                              selected: {_repeatKind},
-                              showSelectedIcon: false,
-                              onSelectionChanged: (s) => setState(() {
-                                _repeatKind = s.first;
-                                if (_repeatKind == 3 &&
-                                    _repeatDays == 0 &&
-                                    _start != null) {
-                                  _repeatDays = 1 << (_start!.weekday - 1);
-                                }
-                              }),
                             ),
+                            // 每 N 天 / 周 / 月 / 年
+                            if (_repeatKind == 1 ||
+                                _repeatKind == 3 ||
+                                _repeatKind == 4 ||
+                                _repeatKind == 5) ...[
+                              SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  Text('间隔',
+                                      style: TextStyle(
+                                          fontSize: 12.5, color: kDim)),
+                                  SizedBox(width: 8),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: _repeatInterval <= 1
+                                        ? null
+                                        : () => setState(
+                                            () => _repeatInterval -= 1),
+                                    icon: Icon(Icons.remove_circle_outline,
+                                        size: 18),
+                                  ),
+                                  Text(
+                                    '每 $_repeatInterval${_repeatUnitCn}',
+                                    style: TextStyle(
+                                        fontSize: 13, color: kFg),
+                                  ),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: _repeatInterval >= 30
+                                        ? null
+                                        : () => setState(
+                                            () => _repeatInterval += 1),
+                                    icon: Icon(Icons.add_circle_outline,
+                                        size: 18),
+                                  ),
+                                ],
+                              ),
+                            ],
                             if (_repeatKind == 3) ...[
                               SizedBox(height: 10),
+                              Wrap(
+                                spacing: 6,
+                                children: [
+                                  _PickChip(
+                                    label: '周末',
+                                    selected: _repeatDays == 0x60,
+                                    color: kWarn,
+                                    onTap: () => setState(
+                                        () => _repeatDays = 0x60),
+                                  ),
+                                  _PickChip(
+                                    label: '工作日',
+                                    selected: _repeatDays == 0x1F,
+                                    color: kWarn,
+                                    onTap: () => setState(
+                                        () => _repeatDays = 0x1F),
+                                  ),
+                                  _PickChip(
+                                    label: '全都选',
+                                    selected: _repeatDays == 0x7F,
+                                    color: kWarn,
+                                    onTap: () => setState(
+                                        () => _repeatDays = 0x7F),
+                                  ),
+                                  _PickChip(
+                                    label: '清空',
+                                    selected: false,
+                                    color: kDim,
+                                    onTap: () =>
+                                        setState(() => _repeatDays = 0),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 8),
                               Wrap(
                                 spacing: 6,
                                 runSpacing: 6,

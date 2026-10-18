@@ -148,10 +148,13 @@ class _TodayPageState extends State<TodayPage> {
     final real = slots.where((s) => !s.cancelled).toList();
 
     // 今天到点的计划
-    final timed = _tasks
-        .where((t) => !t.done && t.inPool == 0 && t.startDt != null)
-        .where((t) => sameDay(t.startDt!, now))
-        .toList()
+    // 重复任务要按规则展开到「今天」：只看 startAt 是否等于今天的话，
+    // 「每周三」的任务在别的星期会整个消失，只在某个星期三闪一次。
+    final timed = _tasks.where((t) {
+      if (t.done || t.inPool == 1 || t.startDt == null) return false;
+      if (t.isRepeating) return t.occurrenceOn(now) != null;
+      return sameDay(t.startDt!, now);
+    }).toList()
       ..sort((a, b) => a.startAt!.compareTo(b.startAt!));
 
     final overdue = _tasks.where((t) => !t.done && t.overdue).toList()
@@ -161,15 +164,17 @@ class _TodayPageState extends State<TodayPage> {
     final pool = untimed.where((t) => t.inPool == 1).toList();
     final loose = untimed.where((t) => t.inPool != 1).toList();
 
-    // 接下来 7 天（不含今天）
-    final upcoming = _tasks
-        .where((t) =>
-            !t.done &&
-            t.startDt != null &&
-            dayOffsetFromToday(t.startDt!) > 0 &&
-            dayOffsetFromToday(t.startDt!) <= 7)
-        .toList()
-      ..sort((a, b) => a.startAt!.compareTo(b.startAt!));
+    // 接下来 7 天（不含今天）。重复任务取「下一次」，而不是那个已经过去的 startAt。
+    final upcoming = <MapEntry<Task, DateTime>>[];
+    final nowMs = now.millisecondsSinceEpoch;
+    for (final t in _tasks) {
+      if (t.done || t.inPool == 1 || t.startDt == null) continue;
+      final nextMs = t.isRepeating ? t.nextOccurrence(nowMs) : t.startAt!;
+      final next = DateTime.fromMillisecondsSinceEpoch(nextMs);
+      final off = dayOffsetFromToday(next);
+      if (off > 0 && off <= 7) upcoming.add(MapEntry(t, next));
+    }
+    upcoming.sort((a, b) => a.value.compareTo(b.value));
 
     final doneToday = _tasks
         .where((t) =>
@@ -307,11 +312,11 @@ class _TodayPageState extends State<TodayPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            for (final t in upcoming.take(6))
+            for (final e in upcoming.take(6))
               _miniChip(
-                t: t,
+                t: e.key,
                 icon: Icons.event_outlined,
-                label: '${_dayLabel(t.startDt!)} ${t.title}',
+                label: '${_dayLabel(e.value)} ${e.key.title}',
               ),
           ],
         ),

@@ -8,11 +8,11 @@ import '../pages/agreement.dart';
 
 /// 一个新版本的信息。
 class UpdateInfo {
-  final String version; // 0.6.8
-  final String tag; // v0.6.8
-  final String notes; // release body
-  final String url; // 原始 asset 直链
-  final int size;
+  final String version; // 0.6.9
+  final String tag; // v0.6.9-build73
+  final String notes; // release 说明（拿不到就为空）
+  final String url; // GitHub 原始直链（加速线由 rank() 拼前缀）
+  final int size; // 字节，0 = 未知
 
   const UpdateInfo({
     required this.version,
@@ -22,9 +22,8 @@ class UpdateInfo {
     required this.size,
   });
 
-  String get sizeText => size <= 0
-      ? '未知大小'
-      : '${(size / 1024 / 1024).toStringAsFixed(1)} MB';
+  String get sizeText =>
+      size <= 0 ? '大小未知' : '${(size / 1024 / 1024).toStringAsFixed(1)} MB';
 }
 
 /// 一条下载线路的测速结果。
@@ -33,24 +32,32 @@ class Mirror {
   final String url;
   final bool ok;
   final double kbps; // 预估速度，KB/s
-
   const Mirror(this.name, this.url, this.ok, this.kbps);
 }
 
 /// 检查更新 + 选最快下载线路。
 ///
-/// 走 GitHub 的公开 REST API（不需要 token，未登录 60 次/小时够用了）。
-/// 下载本身交给原生 DownloadManager，避免在 Dart 里手写大文件落盘和
-/// FileProvider。
+/// 刻意**不用 GitHub API**：
+/// 1. 公开仓库的 Release 匿名就能下，本来就不需要 token；
+/// 2. 未登录的 API 每小时只有 60 次，还容易被限；
+/// 3. 最关键的是——这台平板上 `api.github.com` 直接被 DNS 拦掉
+///    （SocketException: Failed host lookup），而 `github.com` 能解析。
+///
+/// 所以走网页那条路：
+///     GET https://github.com/OWNER/REPO/releases/latest
+/// 它会 302 到 /releases/tag/<tag>，从 Location 里就能读到最新 tag；
+/// 资源直链是稳定格式，不用查 asset id：
+///     https://github.com/OWNER/REPO/releases/download/<tag>/<asset>
 class UpdateChecker {
   UpdateChecker._();
 
   static const _repo = 'qiuchen520/planbox';
 
+  /// CI 打出来的 arm64 包名固定，直接按名字取，省掉列 assets 的接口。
+  static const _asset = 'app-arm64-v8a-release.apk';
+
   /// 加速镜像。键是显示名，值是把原始直链变成镜像链。
-  ///
-  /// 这些站都是公开的 GitHub 反代，谁快谁慢各时段都不一样，
-  /// 所以不写死顺序，一律现场测速。
+  /// 这些都是公开的 GitHub 反代，各时段快慢不一样，所以现场测速，不写死顺序。
   static const Map<String, String> _mirrorPrefix = {
     'ghproxy.net': 'https://ghproxy.net/',
     'gh-proxy.com': 'https://gh-proxy.com/',
@@ -58,11 +65,153 @@ class UpdateChecker {
     'gitmirror': 'https://hub.gitmirror.com/',
   };
 
-  /// 查询最新版本；没有新版（或网络失败）返回 null。
-  /// [error] 用来区分「已是最新」和「没网/被墙」。
+  // ── 查询最新版本 ─────────────────────────────────────
+
+  /// 有新版返回信息，没有新版（或压根没网）返回 null。
+  /// [error] 只在「本该成功却失败」时调用，用来区分「已是最新」。
   static Future<UpdateInfo?> latest({void Function(String)? error}) async {
+    String? tag = await _latestTagFrom(
+      'https://github.com/$_repo/releases/latest',
+    );
+    if (tag == null) {
+      // 直连被墙时，借用加速器去取那个 302
+      for (final p in _mirrorPrefix.values) {
+        tag = await _latestTagFrom(
+          '${p}https://github.com/$_repo/releases/latest',
+        );
+        if (tag != null) break;
+      }
+    }
+
+    if (tag == null) {
+      final r = await _apiFallback();
+      if (r != null) {
+        if (_compare(r.version, About.version) <= 0) return null;
+        return r;
+      }
+      error?.call('连不上 GitHub，看看网络或者换个加速器');
+      return null;
+    }
+
+    final ver = _parseVersion(tag);
+    if (ver == null) {
+      error?.call('读到的版本号看不懂：$tag');
+      return null;
+    }
+    // 当前版本已经 >= 最新，就是「已是最新」，不算失败
+    if (_compare(ver, About.version) <= 0) return null;
+
+    return UpdateInfo(
+      version: ver,
+      tag: tag,
+      notes: '',
+      url: 'https://github.com/$_repo/releases/download/$tag/$_asset',
+      size: 0,
+    );
+  }
+
+  /// 读 releases/latest 的 302 Location，从里面抠出 tag。
+  static Future<String?> _latestTagFrom(String url) async {
+    try {
+      return await _fetchTag(url);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 返回 tag；没有重定向就试着从网页正文里找。
+  static Future<String?> _fetchTag(String url) async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    try {
+      final req = await client.getUrl(Uri.parse(url));
+      req.followRedirects = false;
+      req.headers.set('User-Agent', 'Mozilla/5.0 PlanBox-updater');
+      req.headers.set('Accept', 'text/html,application/xhtml+xml');
+      final res = await req.close().timeout(const Duration(seconds: 12));
+      final loc = res.headers.value('location') ?? '';
+      final body = await res.transform(utf8.decoder).join();
+      return _tagFromText(loc) ?? _tagFromText(body);
+    } on SocketException {
+      // 域名解析不了：直接问 DoH 要 IP，然后拿 IP 连、Host 头写回原域名
+      final host = Uri.parse(url).host;
+      final ip = await _dohLookup(host);
+      if (ip == null) rethrow;
+      return _fetchTagViaIp(url, ip);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Future<String?> _fetchTagViaIp(String url, String ip) async {
+    final u = Uri.parse(url);
     final client = HttpClient()
-      ..connectionTimeout = const Duration(seconds: 10);
+      ..connectionTimeout = const Duration(seconds: 8)
+      // 用 IP 直连时证书必然对不上域名，这里放行；只用于读公开的发布页
+      ..badCertificateCallback = (_, __, ___) => true;
+    try {
+      final req = await client.getUrl(u.replace(host: ip));
+      req.followRedirects = false;
+      req.headers.set(HttpHeaders.hostHeader, u.host);
+      req.headers.set('User-Agent', 'Mozilla/5.0 PlanBox-updater');
+      req.headers.set('Accept', 'text/html,application/xhtml+xml');
+      final res = await req.close().timeout(const Duration(seconds: 12));
+      final loc = res.headers.value('location') ?? '';
+      final body = await res.transform(utf8.decoder).join();
+      return _tagFromText(loc) ?? _tagFromText(body);
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 从任意文本里找出 `/releases/tag/<tag>` 里的 tag
+  static String? _tagFromText(String text) {
+    final i = text.indexOf('/releases/tag/');
+    if (i < 0) return null;
+    var rest = text.substring(i + '/releases/tag/'.length);
+    for (final stop in ['"', "'", ' ', '\n', '\r', '?', '#', '<']) {
+      final j = rest.indexOf(stop);
+      if (j >= 0) rest = rest.substring(0, j);
+    }
+    rest = Uri.decodeComponent(rest.trim());
+    return rest.isEmpty ? null : rest;
+  }
+
+  /// DNS over HTTPS：本地 DNS 不给答案时用，绕开污染。
+  static Future<String?> _dohLookup(String host) async {
+    const endpoints = [
+      'https://223.5.5.5/resolve?name=@&type=A', // 阿里
+      'https://1.12.12.12/resolve?name=@&type=A', // DNSPod
+    ];
+    for (final ep in endpoints) {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 6);
+      try {
+        final req = await client.getUrl(Uri.parse(ep.replaceAll('@', host)));
+        req.headers.set('Accept', 'application/dns-json');
+        final res = await req.close().timeout(const Duration(seconds: 8));
+        if (res.statusCode != 200) continue;
+        final body = await res.transform(utf8.decoder).join();
+        final j = jsonDecode(body);
+        final ans = (j is Map ? j['Answer'] : null) as List? ?? const [];
+        for (final a in ans) {
+          if (a is Map && a['type'] == 1 && a['data'] is String) {
+            return a['data'] as String;
+          }
+        }
+      } catch (_) {
+        // 换下一个 DoH
+      } finally {
+        client.close(force: true);
+      }
+    }
+    return null;
+  }
+
+  /// 最后的兜底：万一 github.com 不通而 API 通（有些网络正好反向），走一次 API。
+  static Future<UpdateInfo?> _apiFallback() async {
+    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
     try {
       final req = await client.getUrl(
         Uri.parse('https://api.github.com/repos/$_repo/releases?per_page=10'),
@@ -70,16 +219,10 @@ class UpdateChecker {
       req.headers.set('Accept', 'application/vnd.github+json');
       req.headers.set('User-Agent', 'PlanBox-updater');
       final res = await req.close().timeout(const Duration(seconds: 20));
-      if (res.statusCode != 200) {
-        error?.call('GitHub 返回 ${res.statusCode}');
-        return null;
-      }
+      if (res.statusCode != 200) return null;
       final body = await res.transform(utf8.decoder).join();
       final list = jsonDecode(body);
-      if (list is! List) {
-        error?.call('返回格式不认识');
-        return null;
-      }
+      if (list is! List) return null;
       UpdateInfo? best;
       for (final r in list) {
         if (r is! Map) continue;
@@ -105,16 +248,15 @@ class UpdateChecker {
         );
         if (best == null || _compare(ver, best.version) > 0) best = info;
       }
-      if (best == null) return null;
-      if (_compare(best.version, About.version) <= 0) return null;
       return best;
-    } catch (e) {
-      error?.call('$e');
+    } catch (_) {
       return null;
     } finally {
       client.close(force: true);
     }
   }
+
+  // ── 测速 ─────────────────────────────────────────────
 
   /// 给所有线路测速，按速度从快到慢返回。直连也在里面。
   static Future<List<Mirror>> rank(String url) async {
@@ -124,11 +266,10 @@ class UpdateChecker {
     ];
     final all = await Future.wait(futures);
     all.sort((a, b) => b.kbps.compareTo(a.kbps));
-    // 快的排前面；不通的留着当兜底（万一探测被限速但实际能下）
     return all;
   }
 
-  /// 抓 256 KB 看看这条线跑得动吗，顺便量速度
+  /// 抓 256 KB 看看这条线跑不跑得动，顺便量速度
   static Future<Mirror> _probe(String name, String url) async {
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 6);
@@ -139,13 +280,10 @@ class UpdateChecker {
       req.headers.set('Range', 'bytes=0-262143');
       req.headers.set('User-Agent', 'PlanBox-updater');
       final res = await req.close().timeout(const Duration(seconds: 8));
-      if (res.statusCode >= 400) {
-        return Mirror(name, url, false, 0);
-      }
+      if (res.statusCode >= 400) return Mirror(name, url, false, 0);
       await for (final chunk in res.timeout(const Duration(seconds: 8))) {
         got += chunk.length;
-        // 够判断速度了就收手，别真下完整个包
-        if (got >= 262144) break;
+        if (got >= 262144) break; // 够判断速度就收手
       }
     } catch (_) {
       return Mirror(name, url, false, 0);
@@ -158,7 +296,8 @@ class UpdateChecker {
     return Mirror(name, url, got >= 64 * 1024, kbps);
   }
 
-  // ── 下载（原生 DownloadManager） ────────────────────
+  // ── 下载（原生 DownloadManager） ─────────────────────
+
   static const _ch = MethodChannelCenter.channel;
 
   static Future<int> enqueue(String url, String fileName) async {
@@ -176,16 +315,20 @@ class UpdateChecker {
   }
 
   /// 拉起系统安装器。
-  ///
   /// 返回 ok=已拉起 / perm=缺「安装未知应用」授权（已跳设置）/ fail=失败。
   static Future<String> install() async =>
       await _ch.invokeMethod<String>('apkInstall') ?? 'fail';
 
-  // ── 版本比较 ──────────────────────────────────────
+  // ── 版本号解析与比较 ─────────────────────────────────
+
+  /// 只取开头「数字.数字…」那一段。
+  ///
+  /// CI 的 tag 形如 `v0.6.9-build73`，减号后面是构建号，不属于版本；
+  /// 老的 `v0.5.0-build71` 会被解析成 0.5.0，正确地小于 0.6.x，
+  /// 所以不会把开发构建误判成新版本。
   static String? _parseVersion(String tag) {
     var s = tag.trim();
     if (s.startsWith('v') || s.startsWith('V')) s = s.substring(1);
-    // 只取前面数字点的部分：0.6.8 / 0.6.8+25 / 0.6.8-beta
     final m = RegExp(r'^(\d+(?:\.\d+)*)').firstMatch(s);
     return m?.group(1);
   }
